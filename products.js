@@ -1224,56 +1224,56 @@ const PRODUCTS = [
 
 // ===== Category Definitions =====
 const CATEGORIES = [
-  { id: "all", nameKey: "cat_all", icon: "📦" },
+  { id: "all", nameKey: "cat_all", icon: "•" },
 
   // --- NEW CATEGORIES ---
-  { id: "baby_care", nameKey: "cat_baby_care", icon: "🍼" },
-  { id: "bc_newborn", nameKey: "cat_bc_newborn", icon: "🍼", isSub: true, parent: "baby_care" },
+  { id: "baby_care", nameKey: "cat_baby_care", icon: "•" },
+  { id: "bc_newborn", nameKey: "cat_bc_newborn", icon: "•", isSub: true, parent: "baby_care" },
 
-  { id: "skin_face_care", nameKey: "cat_skin_face_care", icon: "🧴" },
-  { id: "sfc_cream", nameKey: "cat_sfc_cream", icon: "🧴", isSub: true, parent: "skin_face_care" },
-  { id: "sfc_soap", nameKey: "cat_sfc_soap", icon: "🧼", isSub: true, parent: "skin_face_care" },
-  { id: "sfc_wash", nameKey: "cat_sfc_wash", icon: "🚰", isSub: true, parent: "skin_face_care" },
-  { id: "sfc_mens", nameKey: "cat_sfc_mens", icon: "🪒", isSub: true, parent: "skin_face_care" },
+  { id: "skin_face_care", nameKey: "cat_skin_face_care", icon: "•" },
+  { id: "sfc_cream", nameKey: "cat_sfc_cream", icon: "•", isSub: true, parent: "skin_face_care" },
+  { id: "sfc_soap", nameKey: "cat_sfc_soap", icon: "•", isSub: true, parent: "skin_face_care" },
+  { id: "sfc_wash", nameKey: "cat_sfc_wash", icon: "•", isSub: true, parent: "skin_face_care" },
+  { id: "sfc_mens", nameKey: "cat_sfc_mens", icon: "•", isSub: true, parent: "skin_face_care" },
 
-  { id: "hair_care", nameKey: "cat_hair_care", icon: "💇" },
-  { id: "hc_oil", nameKey: "cat_hc_oil", icon: "🛢️", isSub: true, parent: "hair_care" },
-  { id: "hc_shampoo", nameKey: "cat_hc_shampoo", icon: "🧴", isSub: true, parent: "hair_care" },
-  { id: "hc_color", nameKey: "cat_hc_color", icon: "🎨", isSub: true, parent: "hair_care" },
-  { id: "hc_gel", nameKey: "cat_hc_gel", icon: "🧴", isSub: true, parent: "hair_care" },
-  { id: "hc_mehndi", nameKey: "cat_hc_mehndi", icon: "🌿", isSub: true, parent: "hair_care" },
+  { id: "hair_care", nameKey: "cat_hair_care", icon: "•" },
+  { id: "hc_oil", nameKey: "cat_hc_oil", icon: "•", isSub: true, parent: "hair_care" },
+  { id: "hc_shampoo", nameKey: "cat_hc_shampoo", icon: "•", isSub: true, parent: "hair_care" },
+  { id: "hc_color", nameKey: "cat_hc_color", icon: "•", isSub: true, parent: "hair_care" },
+  { id: "hc_gel", nameKey: "cat_hc_gel", icon: "•", isSub: true, parent: "hair_care" },
+  { id: "hc_mehndi", nameKey: "cat_hc_mehndi", icon: "•", isSub: true, parent: "hair_care" },
 
-  { id: "dental_care", nameKey: "cat_dental_care", icon: "🪥" },
-  { id: "dc_paste", nameKey: "cat_dc_paste", icon: "🧴", isSub: true, parent: "dental_care" },
-  { id: "dc_brush", nameKey: "cat_dc_brush", icon: "🪥", isSub: true, parent: "dental_care" },
+  { id: "dental_care", nameKey: "cat_dental_care", icon: "•" },
+  { id: "dc_paste", nameKey: "cat_dc_paste", icon: "•", isSub: true, parent: "dental_care" },
+  { id: "dc_brush", nameKey: "cat_dc_brush", icon: "•", isSub: true, parent: "dental_care" },
 
-  { id: "sanitary_pad", nameKey: "cat_sanitary_pad", icon: "🩸" },
+  { id: "sanitary_pad", nameKey: "cat_sanitary_pad", icon: "•" },
   
-  { id: "toiletries", nameKey: "cat_toiletries", icon: "🧻" },
+  { id: "toiletries", nameKey: "cat_toiletries", icon: "•" },
 
-  { id: "fabric_utensil_care", nameKey: "cat_fabric_utensil_care", icon: "🧼" },
-  { id: "fuc_fabric", nameKey: "cat_fuc_fabric", icon: "🧺", isSub: true, parent: "fabric_utensil_care" },
-  { id: "fuc_utensil", nameKey: "cat_fuc_utensil", icon: "🍽️", isSub: true, parent: "fabric_utensil_care" },
+  { id: "fabric_utensil_care", nameKey: "cat_fabric_utensil_care", icon: "•" },
+  { id: "fuc_fabric", nameKey: "cat_fuc_fabric", icon: "•", isSub: true, parent: "fabric_utensil_care" },
+  { id: "fuc_utensil", nameKey: "cat_fuc_utensil", icon: "•", isSub: true, parent: "fabric_utensil_care" },
 
-  { id: "fragrance", nameKey: "cat_fragrance", icon: "💨" },
+  { id: "fragrance", nameKey: "cat_fragrance", icon: "•" },
   
-  { id: "mosquito_killer", nameKey: "cat_mosquito_killer", icon: "🦟" },
+  { id: "mosquito_killer", nameKey: "cat_mosquito_killer", icon: "•" },
   
-  { id: "chocolate_wafers", nameKey: "cat_chocolate_wafers", icon: "🍫" },
+  { id: "chocolate_wafers", nameKey: "cat_chocolate_wafers", icon: "•" },
   
-  { id: "noodles_pasta", nameKey: "cat_noodles_pasta", icon: "🍜" },
+  { id: "noodles_pasta", nameKey: "cat_noodles_pasta", icon: "•" },
   
-  { id: "health_drink", nameKey: "cat_health_drink", icon: "🥛" },
+  { id: "health_drink", nameKey: "cat_health_drink", icon: "•" },
   
-  { id: "edible_oil_ghee", nameKey: "cat_edible_oil_ghee", icon: "🏺" },
+  { id: "edible_oil_ghee", nameKey: "cat_edible_oil_ghee", icon: "•" },
   
-  { id: "spice", nameKey: "cat_spice", icon: "🌶️" },
+  { id: "spice", nameKey: "cat_spice", icon: "•" },
 
   // --- EXISTING CATEGORY PRESERVATION (For old items compatibility) ---
-  { id: "beverages",      nameKey: "cat_beverages",      icon: "🥤" },
-  { id: "snacks",         nameKey: "cat_snacks",         icon: "🍿" },
-  { id: "personal_care",  nameKey: "cat_personal_care",  icon: "🧴" },
-  { id: "household",      nameKey: "cat_household",      icon: "🧹" },
-  { id: "dairy",          nameKey: "cat_dairy",          icon: "🧈" },
-  { id: "packaged_foods", nameKey: "cat_packaged",       icon: "🍚" }
+  { id: "beverages",      nameKey: "cat_beverages",      icon: "•" },
+  { id: "snacks",         nameKey: "cat_snacks",         icon: "•" },
+  { id: "personal_care",  nameKey: "cat_personal_care",  icon: "•" },
+  { id: "household",      nameKey: "cat_household",      icon: "•" },
+  { id: "dairy",          nameKey: "cat_dairy",          icon: "•" },
+  { id: "packaged_foods", nameKey: "cat_packaged",       icon: "•" }
 ];

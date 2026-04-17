@@ -181,8 +181,11 @@
               <p class="section-subtitle">Manage your catalog inventory</p>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="btn-secondary" id="generatePdfCatalogBtn" title="Generate WhatsApp-ready Catalog PDF">
+                📄 Generate PDF
+              </button>
               <button class="btn-secondary" id="exportCatalogCsvBtn" title="Export entire catalog as CSV">
-                📤 Export Catalog (CSV)
+                📤 Export CSV
               </button>
               <button class="btn-secondary" id="downloadCsvTemplateBtn" title="Download CSV Template">
                 📥 CSV Template
@@ -615,6 +618,8 @@
   <div class="toast-container" id="adminToastContainer"></div>
 
   <!-- Scripts -->
+  <script src="libs/jspdf.umd.min.js"></script>
+  <script src="libs/jspdf.plugin.autotable.min.js"></script>
   <script src="products.js"></script>
   <script src="i18n.js"></script>
   <script src="admin.js"></script>

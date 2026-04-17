@@ -9,6 +9,49 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  // ===== Data Source Sync =====
+  let APP_PRODUCTS = [];
+  let APP_CATEGORIES = [];
+  
+  function syncData() {
+    const rawProducts = localStorage.getItem("nema_admin_products");
+    if(rawProducts) {
+      APP_PRODUCTS = JSON.parse(rawProducts);
+    } else {
+      APP_PRODUCTS = typeof PRODUCTS !== "undefined" ? PRODUCTS : [];
+    }
+    
+    if(!Array.isArray(APP_PRODUCTS)) APP_PRODUCTS = [];
+
+    const rawCats = localStorage.getItem("nema_admin_categories");
+    let storedCategories = [];
+    if(rawCats) {
+      storedCategories = JSON.parse(rawCats);
+    }
+    
+    if(!Array.isArray(storedCategories)) storedCategories = [];
+    
+    // Auto-merge logic for static categories
+    if (typeof CATEGORIES !== "undefined") {
+      const staticCategories = CATEGORIES;
+      staticCategories.forEach(sc => {
+        if (!storedCategories.find(pc => pc.id === sc.id)) {
+          storedCategories.push(sc);
+        }
+      });
+      storedCategories.forEach(pc => {
+         const sc = staticCategories.find(s => s.id === pc.id);
+         if (sc) {
+            pc.nameKey = sc.nameKey;
+            pc.icon = sc.icon;
+            pc.isSub = sc.isSub;
+            pc.parent = sc.parent;
+         }
+      });
+    }
+    APP_CATEGORIES = storedCategories;
+  }
+
   // ===== State =====
   const state = {
     activeCategory: "all",
@@ -48,43 +91,98 @@
   function renderCategories() {
     const lang = I18N.getLang();
 
-    categoryListEl.innerHTML = CATEGORIES.map(cat => {
+    // Build hierarchy
+    const mainCategories = APP_CATEGORIES.filter(c => !c.isSub);
+    
+    categoryListEl.innerHTML = mainCategories.map(cat => {
+      // Find children
+      const children = APP_CATEGORIES.filter(c => c.isSub && c.parent === cat.id);
+      
       const count = cat.id === "all"
-        ? PRODUCTS.length
-        : PRODUCTS.filter(p => p.category === cat.id).length;
+        ? APP_PRODUCTS.length
+        : APP_PRODUCTS.filter(p => p.category === cat.id || children.some(ch => ch.id === p.category)).length;
+        
+      const isExpanded = state.expandedCategory === cat.id;
+
+      let subHtml = "";
+      if(children.length > 0) {
+          subHtml = `<ul class="sub-category-list" style="display: ${isExpanded ? 'block' : 'none'}; padding-left: 0; list-style: none; margin: 0; background: var(--bg-card); border-radius: 4px; border: 1px solid var(--border-light); overflow: hidden; margin-top: 4px; transition: all 0.3s ease;">` +
+            children.map(sub => {
+                const subCount = APP_PRODUCTS.filter(p => p.category === sub.id).length;
+                return `
+                    <li>
+                        <div class="category-item ${state.activeCategory === sub.id ? 'active' : ''}"
+                             data-category="${sub.id}"
+                             data-is-sub="true"
+                             style="padding: 10px 16px; padding-left: 32px; font-size: 13px; border-bottom: 1px solid var(--border-light); box-shadow: none; margin: 0; border-radius: 0;">
+                            <div class="category-icon" style="width: 16px; height: 16px; font-size: 14px; background: transparent;">${sub.icon}</div>
+                            <span class="category-name">${I18N.t(sub.nameKey)}</span>
+                            <span class="category-count">${subCount}</span>
+                        </div>
+                    </li>
+                `;
+            }).join('') + 
+          `</ul>`;
+      }
 
       return `
         <li>
-          <div class="category-item ${state.activeCategory === cat.id ? 'active' : ''}"
+          <div class="category-item main-cat-item ${state.activeCategory === cat.id ? 'active' : ''}"
                data-category="${cat.id}"
-               id="cat-${cat.id}"
-               style="${cat.isSub ? 'padding-left: 28px; font-size: 11px; margin-top: -2px; border-left: 2px solid var(--border-light); border-bottom-left-radius: 0; border-top-left-radius: 0;' : ''}">
-            <div class="category-icon" style="${cat.isSub ? 'width: 20px; height: 20px; font-size: 12px; background: transparent;' : ''}">${cat.icon}</div>
+               data-has-children="${children.length > 0}">
+            <div class="category-icon" style="background: transparent;">${cat.icon}</div>
             <span class="category-name">${I18N.t(cat.nameKey)}</span>
             <span class="category-count">${count}</span>
+            ${children.length > 0 ? `<span style="margin-left:auto; font-size: 10px; opacity:0.5; transform: rotate(${isExpanded ? '180deg' : '0'}); transition: transform 0.2s;">▼</span>` : ''}
           </div>
+          ${subHtml}
         </li>
       `;
     }).join('');
 
     // Bind click events
     $$(".category-item").forEach(item => {
-      item.addEventListener("click", () => {
-        state.activeCategory = item.dataset.category;
-        renderCategories();
-        renderProducts();
-        sidebarEl.classList.remove("open");
+      item.addEventListener("click", (e) => {
+        const catId = item.dataset.category;
+        const hasChildren = item.dataset.hasChildren === "true";
+        const isSub = item.dataset.isSub === "true";
+        
+        if (hasChildren && !isSub) {
+            // Toggle accordion
+            if (state.expandedCategory === catId) {
+                state.expandedCategory = null; 
+            } else {
+                state.expandedCategory = catId;
+            }
+            state.activeCategory = catId; // Still filter by main category when clicked
+            renderCategories();
+            renderProducts();
+        } else {
+            // Simple selection
+            state.activeCategory = catId;
+            renderCategories();
+            renderProducts();
+            if(window.innerWidth <= 768) {
+               sidebarEl.classList.remove("open");
+            }
+        }
       });
     });
   }
-
   // ===== Filter & Sort Products =====
   function getFilteredProducts() {
-    let filtered = [...PRODUCTS];
+    let filtered = [...APP_PRODUCTS];
 
     // Category filter
     if (state.activeCategory !== "all") {
-      filtered = filtered.filter(p => p.category === state.activeCategory);
+      const activeCatObj = APP_CATEGORIES.find(c => c.id === state.activeCategory);
+      if (activeCatObj && !activeCatObj.isSub) {
+          // If active is Main category, show its products + its children's products
+          const childrenIds = APP_CATEGORIES.filter(c => c.isSub && c.parent === state.activeCategory).map(c => c.id);
+          filtered = filtered.filter(p => p.category === state.activeCategory || childrenIds.includes(p.category));
+      } else {
+          filtered = filtered.filter(p => p.category === state.activeCategory);
+      }
     }
 
     // Search filter
@@ -225,7 +323,7 @@
 
   // ===== Product Modal =====
   function openModal(productId) {
-    const product = PRODUCTS.find(p => p.id === productId);
+    const product = APP_PRODUCTS.find(p => p.id === productId);
     if (!product) return;
 
     const t = I18N.t;
@@ -551,6 +649,7 @@
   // ===== Initialize =====
   async function init() {
     I18N.setLanguage("en");
+    syncData();
 
     // Fetch from native app database if available
     if (window.electronAPI && window.electronAPI.getDbData) {

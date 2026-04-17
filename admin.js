@@ -1943,6 +1943,44 @@
     if ($("#magicUseProductBtn")) {
       $("#magicUseProductBtn").addEventListener("click", handleMagicUseProduct);
     }
+
+    // ─── Electron Auto-Update Integration ───
+    if (typeof window.electronAPI !== 'undefined') {
+      const updateBar = document.getElementById('updateBar');
+      const updateMessage = document.getElementById('updateMessage');
+      const updateActionBtn = document.getElementById('updateActionBtn');
+      const updateDismiss = document.getElementById('updateDismiss');
+      const updateProgressBar = document.getElementById('updateProgressBar');
+
+      const showUpdateBar = (msg, showBtn = false, progress = 0) => {
+        if (!updateBar) return;
+        updateMessage.textContent = msg;
+        updateActionBtn.style.display = showBtn ? 'inline-block' : 'none';
+        updateProgressBar.style.width = progress + '%';
+        updateBar.style.top = '0';
+      };
+
+      const hideUpdateBar = () => {
+        if (!updateBar) return;
+        updateBar.style.top = '-60px';
+      };
+
+      window.electronAPI.onUpdateStatus((data) => {
+        switch (data.status) {
+          case 'checking': break;
+          case 'available': showUpdateBar(`⬇️ ${data.message}`, false, 0); break;
+          case 'downloading': showUpdateBar(`⬇️ Downloading update: ${data.percent}%`, false, data.percent); break;
+          case 'downloaded': showUpdateBar(`✅ ${data.message}`, true, 100); break;
+          case 'error':
+            showUpdateBar(`⚠️ ${data.message}`, false, 0);
+            setTimeout(hideUpdateBar, 5000);
+            break;
+        }
+      });
+
+      if (updateActionBtn) updateActionBtn.addEventListener('click', () => window.electronAPI.installUpdate());
+      if (updateDismiss) updateDismiss.addEventListener('click', hideUpdateBar);
+    }
   }
 
   // ===== Inline grid for Products section view toggle =====

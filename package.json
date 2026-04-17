@@ -1,6 +1,6 @@
 {
   "name": "nema-chemicals",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "NEMA Chemicals — Wholesale FMCG Product Catalog Desktop App",
   "main": "main.js",
   "author": "NEMA Chemicals",
@@ -66,8 +66,9 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "YOUR_GITHUB_USERNAME",
-        "repo": "nema-chemicals"
+        "owner": "nemachemicals",
+        "repo": "nema-chemicals",
+        "releaseType": "release"
       }
     ]
   },
