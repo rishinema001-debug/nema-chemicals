@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="NEMA Chemicals — Wholesale FMCG Product Catalog for Retailers. Browse beverages, snacks, personal care, household essentials and more at best wholesale prices.">
+  <title>NEMA Chemicals — Wholesale FMCG Catalog</title>
+  <link rel="icon" type="image/png" href="build/icon.png">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Electron Desktop Styles -->
+  <style>
+    /* macOS titlebar drag region for Electron */
+    .electron-drag-region {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      -webkit-app-region: drag;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    .electron-drag-region * {
+      -webkit-app-region: no-drag;
+    }
+    /* Adjust header for Electron hidden titlebar */
+    body.is-electron .header {
+      padding-top: 8px;
+    }
+
+    /* Auto-update notification bar */
+    .update-bar {
+      position: fixed;
+      top: -60px;
+      left: 0;
+      right: 0;
+      z-index: 9998;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      transition: top 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+    }
+    .update-bar.visible {
+      top: 0;
+    }
+    .update-bar .update-message {
+      flex: 1;
+      text-align: center;
+    }
+    .update-bar .update-progress-bar {
+      height: 3px;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      background: rgba(255,255,255,0.5);
+      border-radius: 0 2px 2px 0;
+      transition: width 0.3s ease;
+    }
+    .update-bar .update-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 5px 16px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      pointer-events: auto;
+      -webkit-app-region: no-drag;
+    }
+    .update-bar .update-btn:hover {
+      background: rgba(255,255,255,0.35);
+    }
+    .update-bar .update-dismiss {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.7);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 2px 6px;
+      pointer-events: auto;
+      -webkit-app-region: no-drag;
+    }
+    .update-bar .update-dismiss:hover {
+      color: white;
+    }
+    /* Push content down when update bar visible */
+    body.is-electron.update-visible .header {
+      top: 40px;
+    }
+    body.is-electron.update-visible .main-wrapper {
+      margin-top: calc(var(--header-height) + 40px);
+    }
+    body.is-electron.update-visible .sidebar {
+      top: calc(var(--header-height) + 40px);
+    }
+
+    /* App version footer badge */
+    .app-version-badge {
+      display: none;
+    }
+    body.is-electron .app-version-badge {
+      display: inline-block;
+      background: rgba(37, 99, 235, 0.1);
+      color: #2563eb;
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 100px;
+      margin-left: 8px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Electron Drag Region (transparent, for window dragging on macOS) -->
+  <div class="electron-drag-region" id="electronDragRegion" style="display:none;"></div>
+
+  <!-- Auto-Update Notification Bar -->
+  <div class="update-bar" id="updateBar">
+    <span class="update-message" id="updateMessage">Checking for updates...</span>
+    <button class="update-btn" id="updateActionBtn" style="display:none;">Restart Now</button>
+    <button class="update-dismiss" id="updateDismiss" title="Dismiss">✕</button>
+    <div class="update-progress-bar" id="updateProgressBar" style="width: 0%;"></div>
+  </div>
+
+  <!-- ========== HEADER ========== -->
+  <header class="header" id="mainHeader">
+    <div class="header-inner">
+      <!-- Logo -->
+      <div class="logo">
+        <div class="logo-icon">🧪</div>
+        <div class="logo-text-group">
+          <span class="logo-text">NEMA Chemicals</span>
+          <span class="logo-subtitle" data-i18n="logo_subtitle">Wholesale FMCG Catalog</span>
+        </div>
+      </div>
+
+      <!-- Search Bar (Desktop) -->
+      <div class="search-container" id="searchContainer">
+        <span class="search-icon">🔍</span>
+        <input type="search" class="search-bar" id="searchBar" data-i18n-placeholder="search_placeholder" placeholder="Search products, brands, categories…">
+      </div>
+
+      <!-- Header Actions -->
+      <div class="header-actions">
+        <!-- Print Catalog Button -->
+        <button class="print-catalog-btn" id="printCatalogBtn" aria-label="Print Catalog" title="Print Catalog">
+          🖨️ <span class="print-label" data-i18n="print_catalog">Print Catalog</span>
+        </button>
+
+        <!-- Language Toggle -->
+        <button class="lang-toggle" id="langToggle" aria-label="Toggle language">
+          <span class="lang-label" id="langLabel">हिंदी</span>
+        </button>
+
+        <!-- Mobile Menu -->
+        <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Toggle menu">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== MAIN LAYOUT ========== -->
+  <div class="main-wrapper">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <h2 class="sidebar-title" data-i18n="categories_title">Categories</h2>
+        <ul class="category-list" id="categoryList"></ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Hero Banner (3D Typography Brand Identity) -->
+      <section class="hero-banner" id="heroBanner">
+        <img src="images/nema_3d_logo.png" alt="NEMA CHEMICALS" class="hero-3d-logo">
+      </section>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="result-count" id="resultCount"></span>
+        </div>
+        <div class="toolbar-right">
+          <select class="sort-select" id="sortSelect">
+            <option value="name-asc" data-i18n-option="sort_name_asc">Name A-Z</option>
+            <option value="name-desc" data-i18n-option="sort_name_desc">Name Z-A</option>
+            <option value="price-asc" data-i18n-option="sort_price_asc">Price: Low to High</option>
+            <option value="price-desc" data-i18n-option="sort_price_desc">Price: High to Low</option>
+            <option value="discount" data-i18n-option="sort_discount">Best Discount</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Product Grid -->
+      <div class="product-grid" id="productGrid"></div>
+
+      <!-- Empty State -->
+      <div class="empty-state" id="emptyState" style="display:none;">
+        <div class="empty-icon">📦</div>
+        <h3 class="empty-title" data-i18n="empty_title">No products found</h3>
+        <p class="empty-desc" data-i18n="empty_desc">Try adjusting your search or filter to find what you're looking for.</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Cart and transactional drawer removed -->
+
+  <!-- ========== PRODUCT DETAIL MODAL ========== -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="productModal">
+      <div class="modal-image-section">
+        <button class="modal-close" id="modalClose" aria-label="Close modal">✕</button>
+        <img src="" alt="" class="modal-product-image" id="modalImage">
+      </div>
+      <div class="modal-details">
+        <span class="modal-category" id="modalCategory"></span>
+        <h2 class="modal-product-name" id="modalName"></h2>
+        <p class="modal-product-desc" id="modalDesc"></p>
+        <!-- Variant Selector in Modal -->
+        <div class="modal-variant-selector" id="modalVariants" style="display:none;"></div>
+        <div class="modal-info-grid">
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_weight">Weight</div>
+            <div class="modal-info-value" id="modalWeight"></div>
+          </div>
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_brand">Brand</div>
+            <div class="modal-info-value" id="modalBrand"></div>
+          </div>
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_sku">SKU</div>
+            <div class="modal-info-value" id="modalSku"></div>
+          </div>
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_stock">Stock</div>
+            <div class="modal-info-value" id="modalStock"></div>
+          </div>
+        </div>
+        <div class="modal-pricing">
+          <span class="modal-price" id="modalPrice"></span>
+          <span class="modal-mrp" id="modalMrp"></span>
+          <span class="modal-discount" id="modalDiscount"></span>
+        </div>
+      <!-- Quantity and Add to Cart removed -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>© 2026 NEMA Chemicals — <span data-i18n="footer_text">Wholesale FMCG Distribution</span><span class="app-version-badge" id="appVersionBadge"></span></p>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="i18n.js"></script>
+  <script src="products.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Electron Auto-Update Integration -->
+  <script>
+    (() => {
+      // Only run if inside Electron
+      if (typeof window.electronAPI === 'undefined') return;
+
+      document.body.classList.add('is-electron');
+
+      // Show drag region for macOS window dragging
+      const dragRegion = document.getElementById('electronDragRegion');
+      if (dragRegion && window.electronAPI.platform === 'darwin') {
+        dragRegion.style.display = 'block';
+      }
+
+      // Display app version in footer
+      window.electronAPI.getAppVersion().then(version => {
+        const badge = document.getElementById('appVersionBadge');
+        if (badge) badge.textContent = `v${version}`;
+      });
+
+      // Auto-Update UI
+      const updateBar = document.getElementById('updateBar');
+      const updateMessage = document.getElementById('updateMessage');
+      const updateActionBtn = document.getElementById('updateActionBtn');
+      const updateDismiss = document.getElementById('updateDismiss');
+      const updateProgressBar = document.getElementById('updateProgressBar');
+
+      function showUpdateBar(msg, showBtn = false, progress = 0) {
+        updateMessage.textContent = msg;
+        updateActionBtn.style.display = showBtn ? 'inline-block' : 'none';
+        updateProgressBar.style.width = progress + '%';
+        updateBar.classList.add('visible');
+        document.body.classList.add('update-visible');
+      }
+
+      function hideUpdateBar() {
+        updateBar.classList.remove('visible');
+        document.body.classList.remove('update-visible');
+      }
+
+      // Listen for update events from main process
+      window.electronAPI.onUpdateStatus((data) => {
+        switch (data.status) {
+          case 'checking':
+            // Don't show bar for routine checks
+            break;
+          case 'available':
+            showUpdateBar(`⬇️ ${data.message}`, false, 0);
+            break;
+          case 'downloading':
+            showUpdateBar(`⬇️ Downloading update: ${data.percent}%`, false, data.percent);
+            break;
+          case 'downloaded':
+            showUpdateBar(`✅ ${data.message}`, true, 100);
+            break;
+          case 'up-to-date':
+            // Briefly show and hide
+            break;
+          case 'error':
+            showUpdateBar(`⚠️ ${data.message}`, false, 0);
+            setTimeout(hideUpdateBar, 5000);
+            break;
+        }
+      });
+
+      // Restart button
+      updateActionBtn.addEventListener('click', () => {
+        window.electronAPI.installUpdate();
+      });
+
+      // Dismiss button
+      updateDismiss.addEventListener('click', hideUpdateBar);
+    })();
+  </script>
+</body>
+</html>
