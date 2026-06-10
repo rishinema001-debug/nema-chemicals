@@ -85,10 +85,13 @@
     if (rawBrands) {
       try { APP_BRANDS = JSON.parse(rawBrands); } catch (_) { APP_BRANDS = []; }
     } else {
+      APP_BRANDS = [];
+    }
+    
+    if (!Array.isArray(APP_BRANDS) || APP_BRANDS.length === 0) {
       const uniqueBrands = [...new Set(APP_PRODUCTS.map(p => p.brand))].filter(b => b);
       APP_BRANDS = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
     }
-    if (!Array.isArray(APP_BRANDS)) APP_BRANDS = [];
 
   }
 
