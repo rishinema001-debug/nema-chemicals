@@ -1,7 +1,7 @@
 {
   "name": "nema-chemicals",
-  "version": "1.0.1",
-  "description": "NEMA Chemicals — Wholesale FMCG Product Catalog Desktop App",
+  "version": "1.1.0",
+  "description": "NEMA Chemicals — FMCG Product Catalog App",
   "main": "main.js",
   "author": "NEMA Chemicals",
   "license": "MIT",
@@ -13,7 +13,8 @@
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
     "dist:linux": "electron-builder --linux",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "watch-images": "node watch-images.js"
   },
   "build": {
     "appId": "com.nemachemicals.catalog",
@@ -32,7 +33,11 @@
       "admin.js",
       "products.js",
       "i18n.js",
+      "image-index.js",
+      "sw.js",
+      "manifest.json",
       "images/**/*",
+      "pwa-icons/**/*",
       "build/icon.png"
     ],
     "mac": {
@@ -66,7 +71,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "nemachemicals",
+        "owner": "rishi2006",
         "repo": "nema-chemicals",
         "releaseType": "release"
       }

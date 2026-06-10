@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="NEMA Chemicals — FMCG Product Catalog for Retailers. Browse beverages, snacks, personal care, household essentials and more at best prices.">
+  <title>NEMA Chemicals — FMCG Product Catalog</title>
+  <link rel="icon" type="image/png" href="build/icon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="pwa-icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="NEMA Catalog">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&family=Pacifico&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Electron Desktop Styles -->
+  <style>
+    /* macOS titlebar drag region for Electron */
+    .electron-drag-region {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      -webkit-app-region: drag;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    .electron-drag-region * {
+      -webkit-app-region: no-drag;
+    }
+    /* Adjust header for Electron hidden titlebar */
+    body.is-electron .header {
+      padding-top: 8px;
+    }
+
+    /* Auto-update notification bar */
+    .update-bar {
+      position: fixed;
+      top: -60px;
+      left: 0;
+      right: 0;
+      z-index: 9998;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      transition: top 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3);
+    }
+    .update-bar.visible {
+      top: 0;
+    }
+    .update-bar .update-message {
+      flex: 1;
+      text-align: center;
+    }
+    .update-bar .update-progress-bar {
+      height: 3px;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      background: rgba(255,255,255,0.5);
+      border-radius: 0 2px 2px 0;
+      transition: width 0.3s ease;
+    }
+    .update-bar .update-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 5px 16px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      pointer-events: auto;
+      -webkit-app-region: no-drag;
+    }
+    .update-bar .update-btn:hover {
+      background: rgba(255,255,255,0.35);
+    }
+    .update-bar .update-dismiss {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.7);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 2px 6px;
+      pointer-events: auto;
+      -webkit-app-region: no-drag;
+    }
+    .update-bar .update-dismiss:hover {
+      color: white;
+    }
+    /* Push content down when update bar visible */
+    body.is-electron.update-visible .header {
+      top: 40px;
+    }
+    body.is-electron.update-visible .main-wrapper {
+      margin-top: calc(var(--header-height) + 40px);
+    }
+    body.is-electron.update-visible .sidebar {
+      top: calc(var(--header-height) + 40px);
+    }
+
+    /* App version footer badge */
+    .app-version-badge {
+      display: none;
+    }
+    body.is-electron .app-version-badge {
+      display: inline-block;
+      background: rgba(37, 99, 235, 0.1);
+      color: #2563eb;
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 100px;
+      margin-left: 8px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Electron Drag Region (transparent, for window dragging on macOS) -->
+  <div class="electron-drag-region" id="electronDragRegion" style="display:none;"></div>
+
+  <!-- Auto-Update Notification Bar -->
+  <div class="update-bar" id="updateBar">
+    <span class="update-message" id="updateMessage">Checking for updates...</span>
+    <button class="update-btn" id="updateActionBtn" style="display:none;">Restart Now</button>
+    <button class="update-dismiss" id="updateDismiss" title="Dismiss">✕</button>
+    <div class="update-progress-bar" id="updateProgressBar" style="width: 0%;"></div>
+  </div>
+
+  <!-- ========== HEADER ========== -->
+  <header class="header" id="mainHeader">
+    <div class="header-inner">
+      <!-- Logo -->
+      <div class="logo" style="display:flex; align-items:center; gap:10px;">
+        <div style="background: linear-gradient(135deg, #2563eb, #1e40af); color: #ffffff; font-weight: 900; font-family: 'Outfit', sans-serif; font-size: 20px; width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; letter-spacing: -1.5px; box-shadow: 0 4px 15px rgba(37,99,235,0.4); border: 1px solid rgba(255,255,255,0.3); transform: rotate(-2deg); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">NC</div>
+        <div class="logo-text-group">
+          <span class="logo-text">NEMA Chemicals</span>
+          <span class="logo-subtitle" data-i18n="logo_subtitle">FMCG Product Catalog</span>
+        </div>
+      </div>
+
+      <!-- Search Bar (Desktop) -->
+      <div class="search-container" id="searchContainer">
+        <span class="search-icon">🔍</span>
+        <input type="search" class="search-bar" id="searchBar" data-i18n-placeholder="search_placeholder" placeholder="Search products, brands, categories…">
+      </div>
+
+      <!-- Mobile Search (visible only on mobile) -->
+      <div class="mobile-search-container" id="mobileSearchContainer" style="display:none;">
+        <span class="search-icon">🔍</span>
+        <input type="search" class="search-bar" id="mobileSearchBar" placeholder="Search products…">
+      </div>
+
+      <!-- Header Actions -->
+      <div class="header-actions">
+        <!-- Share Button -->
+        <button class="share-btn" id="shareBtn" aria-label="Share Catalog" title="Share">
+          📤 <span class="share-label">Share</span>
+        </button>
+
+        <!-- Print Catalog Button -->
+        <button class="print-catalog-btn" id="printCatalogBtn" aria-label="Print Catalog" title="Print Catalog">
+          🖨️ <span class="print-label" data-i18n="print_catalog">Print Catalog</span>
+        </button>
+
+        <!-- Language Toggle -->
+        <button class="lang-toggle" id="langToggle" aria-label="Toggle language">
+          <span class="lang-label" id="langLabel">हिंदी</span>
+        </button>
+
+        <!-- Mobile Menu -->
+        <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Toggle menu">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== MAIN LAYOUT ========== -->
+  <div class="main-wrapper">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <h2 class="sidebar-title" data-i18n="categories_title">Categories</h2>
+        <div class="category-search">
+          <input type="text" id="categorySearch" class="category-search-input" data-i18n-placeholder="category_search_placeholder" placeholder="Find Category...">
+        </div>
+        <ul class="category-list" id="categoryList"></ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Hero Banner (Creative & Fixed Size) -->
+      <section class="hero-banner" id="heroBanner" style="position: relative; background: url('images/grocery_blurred.png') center/cover no-repeat; border-radius: 16px; height: 180px; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);">
+        
+        <!-- Dark overlay to ensure text pops -->
+        <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.6)); z-index: 1;"></div>
+
+        <!-- Cursive Typography -->
+        <h1 style="position: relative; z-index: 2; font-family: 'Pacifico', cursive; color: #ffffff; font-size: 54px; letter-spacing: 2px; text-shadow: 2px 4px 12px rgba(0,0,0,0.8); margin: 0; padding: 0; transform: skewX(-5deg);">Nema Chemicals</h1>
+      </section>
+
+      <!-- Store Brands Section -->
+      <section class="store-brands-section" id="storeBrandsSection" style="margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+          <h2 style="font-size: 1.25rem; font-weight: 700; color: #1e293b; margin: 0;">Popular Brands</h2>
+          <div class="search-container" style="max-width: 200px; margin: 0; background: #f1f5f9; padding: 6px 12px; border-radius: 20px;">
+             <input type="search" class="search-bar" id="storeBrandSearch" placeholder="Search brands..." style="background: transparent; border: none; outline: none; width: 100%; font-size: 13px;">
+          </div>
+        </div>
+        <div class="store-brands-carousel" id="storeBrandsCarousel" style="display: flex; gap: 20px; overflow-x: auto; padding-bottom: 10px; scroll-behavior: smooth;">
+          <!-- Circular brands rendered via JS -->
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+          <button id="toggleBrandsLayout" data-i18n="show_all_brands" style="background: none; border: none; color: #2563eb; font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; font-family: inherit;">Show All Brands</button>
+        </div>
+      </section>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="result-count" id="resultCount"></span>
+        </div>
+        <div class="toolbar-right">
+          <select class="sort-select" id="sortSelect">
+            <option value="name-asc" data-i18n-option="sort_name_asc">Name A-Z</option>
+            <option value="name-desc" data-i18n-option="sort_name_desc">Name Z-A</option>
+            <option value="price-asc" data-i18n-option="sort_price_asc">Price: Low to High</option>
+            <option value="price-desc" data-i18n-option="sort_price_desc">Price: High to Low</option>
+            <option value="discount" data-i18n-option="sort_discount">Best Discount</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Product Grid -->
+      <div class="product-grid" id="productGrid"></div>
+
+      <!-- Empty State -->
+      <div class="empty-state" id="emptyState" style="display:none;">
+        <div class="empty-icon">📦</div>
+        <h3 class="empty-title" data-i18n="empty_title">No products found</h3>
+        <p class="empty-desc" data-i18n="empty_desc">Try adjusting your search or filter to find what you're looking for.</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Cart and transactional drawer removed -->
+
+  <!-- ========== PRODUCT DETAIL MODAL ========== -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="productModal">
+      <div class="modal-image-section">
+        <button class="modal-close" id="modalClose" aria-label="Close modal">✕</button>
+        <img src="" alt="" class="modal-product-image" id="modalImage">
+      </div>
+      <div class="modal-details">
+        <span class="modal-category" id="modalCategory"></span>
+        <h2 class="modal-product-name" id="modalName"></h2>
+        <p class="modal-product-desc" id="modalDesc"></p>
+        <!-- Variant Selector in Modal -->
+        <div class="modal-variant-selector" id="modalVariants" style="display:none;"></div>
+        <div class="modal-info-grid">
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_weight">Weight</div>
+            <div class="modal-info-value" id="modalWeight"></div>
+          </div>
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_brand">Brand</div>
+            <div class="modal-info-value" id="modalBrand"></div>
+          </div>
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_sku">SKU</div>
+            <div class="modal-info-value" id="modalSku"></div>
+          </div>
+          <div class="modal-info-item">
+            <div class="modal-info-label" data-i18n="label_stock">Stock</div>
+            <div class="modal-info-value" id="modalStock"></div>
+          </div>
+        </div>
+        <div class="modal-pricing">
+          <span class="modal-price" id="modalPrice"></span>
+          <span class="modal-mrp" id="modalMrp"></span>
+          <span class="modal-discount" id="modalDiscount"></span>
+        </div>
+      <!-- Quantity and Add to Cart removed -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Offline Indicator -->
+  <div class="offline-bar" id="offlineBar">
+    <span>📴 You are offline — showing cached catalog</span>
+  </div>
+
+  <!-- PWA Install Banner -->
+  <div class="pwa-install-banner" id="pwaInstallBanner" style="display:none;">
+    <div class="pwa-install-content">
+      <div class="pwa-install-icon">📱</div>
+      <div class="pwa-install-text">
+        <strong>Install NEMA Catalog</strong>
+        <span>Home screen पर add करें — fast access, offline mode</span>
+      </div>
+    </div>
+    <div class="pwa-install-actions">
+      <button class="pwa-install-btn" id="pwaInstallBtn">Install</button>
+      <button class="pwa-install-dismiss" id="pwaInstallDismiss">✕</button>
+    </div>
+  </div>
+
+  <!-- Update Available Toast -->
+  <div class="update-toast" id="updateToast" style="display:none;">
+    <span>🔄 New products available!</span>
+    <button class="update-toast-btn" id="updateToastBtn">Refresh</button>
+    <button class="update-toast-dismiss" id="updateToastDismiss">✕</button>
+  </div>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="mobile-bottom-nav" id="mobileBottomNav">
+    <button class="bottom-nav-item active" data-action="home" id="navHome">
+      <span class="bottom-nav-icon">🏠</span>
+      <span class="bottom-nav-label">Home</span>
+    </button>
+    <button class="bottom-nav-item" data-action="categories" id="navCategories">
+      <span class="bottom-nav-icon">📋</span>
+      <span class="bottom-nav-label">Categories</span>
+    </button>
+    <button class="bottom-nav-item" data-action="search" id="navSearch">
+      <span class="bottom-nav-icon">🔍</span>
+      <span class="bottom-nav-label">Search</span>
+    </button>
+    <button class="bottom-nav-item" data-action="share" id="navShare">
+      <span class="bottom-nav-icon">📤</span>
+      <span class="bottom-nav-label">Share</span>
+    </button>
+  </nav>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>© 2026 NEMA Chemicals — <span data-i18n="footer_text">FMCG Distribution</span><span class="app-version-badge" id="appVersionBadge"></span></p>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="image-index.js"></script>
+  <script src="i18n.js"></script>
+  <script src="products.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Electron Auto-Update Integration -->
+  <script>
+    (() => {
+      // Only run if inside Electron
+      if (typeof window.electronAPI === 'undefined') return;
+
+      document.body.classList.add('is-electron');
+
+      // Show drag region for macOS window dragging
+      const dragRegion = document.getElementById('electronDragRegion');
+      if (dragRegion && window.electronAPI.platform === 'darwin') {
+        dragRegion.style.display = 'block';
+      }
+
+      // Display app version in footer
+      window.electronAPI.getAppVersion().then(version => {
+        const badge = document.getElementById('appVersionBadge');
+        if (badge) badge.textContent = `v${version}`;
+      });
+
+      // Auto-Update UI
+      const updateBar = document.getElementById('updateBar');
+      const updateMessage = document.getElementById('updateMessage');
+      const updateActionBtn = document.getElementById('updateActionBtn');
+      const updateDismiss = document.getElementById('updateDismiss');
+      const updateProgressBar = document.getElementById('updateProgressBar');
+
+      function showUpdateBar(msg, showBtn = false, progress = 0) {
+        updateMessage.textContent = msg;
+        updateActionBtn.style.display = showBtn ? 'inline-block' : 'none';
+        updateProgressBar.style.width = progress + '%';
+        updateBar.classList.add('visible');
+        document.body.classList.add('update-visible');
+      }
+
+      function hideUpdateBar() {
+        updateBar.classList.remove('visible');
+        document.body.classList.remove('update-visible');
+      }
+
+      // Listen for update events from main process
+      window.electronAPI.onUpdateStatus((data) => {
+        switch (data.status) {
+          case 'checking':
+            // Don't show bar for routine checks
+            break;
+          case 'available':
+            showUpdateBar(`⬇️ ${data.message}`, false, 0);
+            break;
+          case 'downloading':
+            showUpdateBar(`⬇️ Downloading update: ${data.percent}%`, false, data.percent);
+            break;
+          case 'downloaded':
+            showUpdateBar(`✅ ${data.message}`, true, 100);
+            break;
+          case 'up-to-date':
+            // Briefly show and hide
+            break;
+          case 'error':
+            showUpdateBar(`⚠️ ${data.message}`, false, 0);
+            setTimeout(hideUpdateBar, 5000);
+            break;
+        }
+      });
+
+      // Restart button
+      updateActionBtn.addEventListener('click', () => {
+        window.electronAPI.installUpdate();
+      });
+
+      // Dismiss button
+      updateDismiss.addEventListener('click', hideUpdateBar);
+    })();
+  </script>
+
+  <!-- Service Worker Registration & PWA Features -->
+  <script>
+    // ===== Register Service Worker =====
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          console.log('[PWA] Service Worker registered, scope:', registration.scope);
+
+          // Check for updates periodically (every 30 minutes)
+          setInterval(() => {
+            registration.update();
+          }, 30 * 60 * 1000);
+
+          // Listen for new service worker
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'activated') {
+                // New SW activated — products might have updated
+                const updateToast = document.getElementById('updateToast');
+                if (updateToast) updateToast.style.display = 'flex';
+              }
+            });
+          });
+        } catch (err) {
+          console.warn('[PWA] SW registration failed:', err);
+        }
+      });
+
+      // Listen for messages from Service Worker
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data.type === 'DATA_UPDATED') {
+          console.log('[PWA] Product data updated from server');
+          const updateToast = document.getElementById('updateToast');
+          if (updateToast) updateToast.style.display = 'flex';
+        }
+        if (event.data.type === 'SW_UPDATED') {
+          console.log('[PWA] Service Worker updated to:', event.data.version);
+        }
+      });
+    }
+
+    // ===== PWA Install Prompt =====
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+
+      // Don't show if already dismissed recently
+      const dismissed = localStorage.getItem('pwa_install_dismissed');
+      if (dismissed && (Date.now() - parseInt(dismissed)) < 7 * 24 * 60 * 60 * 1000) return;
+
+      // Show install banner after 15 seconds
+      setTimeout(() => {
+        const banner = document.getElementById('pwaInstallBanner');
+        if (banner) banner.style.display = 'flex';
+      }, 15000);
+    });
+
+    // Install button
+    document.getElementById('pwaInstallBtn')?.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log('[PWA] Install prompt result:', outcome);
+      deferredPrompt = null;
+      document.getElementById('pwaInstallBanner').style.display = 'none';
+    });
+
+    // Dismiss install banner
+    document.getElementById('pwaInstallDismiss')?.addEventListener('click', () => {
+      document.getElementById('pwaInstallBanner').style.display = 'none';
+      localStorage.setItem('pwa_install_dismissed', Date.now().toString());
+    });
+
+    // ===== Update Toast =====
+    document.getElementById('updateToastBtn')?.addEventListener('click', () => {
+      window.location.reload();
+    });
+    document.getElementById('updateToastDismiss')?.addEventListener('click', () => {
+      document.getElementById('updateToast').style.display = 'none';
+    });
+
+    // ===== Share Functionality =====
+    function shareCatalog() {
+      const shareData = {
+        title: 'NEMA Chemicals — FMCG Product Catalog',
+        text: 'NEMA Chemicals का FMCG product catalog देखें। Best prices on 500+ products!',
+        url: window.location.href
+      };
+
+      if (navigator.share) {
+        navigator.share(shareData).catch(() => {});
+      } else {
+        // Fallback: copy URL
+        navigator.clipboard.writeText(window.location.href).then(() => {
+          // Show toast
+          const toast = document.createElement('div');
+          toast.className = 'toast';
+          toast.innerHTML = '<span class="toast-message">✅ Link copied! Share via WhatsApp or SMS</span>';
+          document.getElementById('toastContainer')?.appendChild(toast);
+          setTimeout(() => toast.remove(), 3000);
+        });
+      }
+    }
+
+    document.getElementById('shareBtn')?.addEventListener('click', shareCatalog);
+    document.getElementById('navShare')?.addEventListener('click', shareCatalog);
+
+    // ===== Offline Detection =====
+    function updateOnlineStatus() {
+      const offlineBar = document.getElementById('offlineBar');
+      if (!offlineBar) return;
+      if (navigator.onLine) {
+        offlineBar.classList.remove('visible');
+      } else {
+        offlineBar.classList.add('visible');
+      }
+    }
+
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+
+    // ===== Mobile Bottom Nav =====
+    document.getElementById('navHome')?.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.querySelectorAll('.bottom-nav-item').forEach(i => i.classList.remove('active'));
+      document.getElementById('navHome').classList.add('active');
+      // Close sidebar if open
+      document.getElementById('sidebar')?.classList.remove('open');
+      // Hide mobile search
+      const msc = document.getElementById('mobileSearchContainer');
+      if (msc) msc.style.display = 'none';
+      if (typeof window.clearActiveBrand === 'function') window.clearActiveBrand();
+    });
+
+    document.getElementById('navCategories')?.addEventListener('click', () => {
+      document.querySelectorAll('.bottom-nav-item').forEach(i => i.classList.remove('active'));
+      document.getElementById('navCategories').classList.add('active');
+      document.getElementById('sidebar')?.classList.toggle('open');
+      // Hide mobile search
+      const msc = document.getElementById('mobileSearchContainer');
+      if (msc) msc.style.display = 'none';
+    });
+
+    document.getElementById('navSearch')?.addEventListener('click', () => {
+      document.querySelectorAll('.bottom-nav-item').forEach(i => i.classList.remove('active'));
+      document.getElementById('navSearch').classList.add('active');
+      // Show mobile search
+      const msc = document.getElementById('mobileSearchContainer');
+      if (msc) {
+        msc.style.display = msc.style.display === 'none' ? 'flex' : 'none';
+        if (msc.style.display === 'flex') {
+          msc.querySelector('input')?.focus();
+        }
+      }
+      // Close sidebar
+      document.getElementById('sidebar')?.classList.remove('open');
+    });
+
+    // Mobile search bar syncs with main search
+    document.getElementById('mobileSearchBar')?.addEventListener('input', (e) => {
+      const mainSearch = document.getElementById('searchBar');
+      if (mainSearch) {
+        mainSearch.value = e.target.value;
+        mainSearch.dispatchEvent(new Event('input'));
+      }
+    });
+  </script>
+</body>
+</html>

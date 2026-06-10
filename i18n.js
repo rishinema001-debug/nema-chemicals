@@ -5,18 +5,18 @@ const I18N = (() => {
   const translations = {
     en: {
       // Header / Nav
-      logo_subtitle: "Wholesale FMCG Catalog",
+      logo_subtitle: "FMCG Product Catalog",
       search_placeholder: "Search products, brands, categories…",
 
       // Hero
-      hero_badge: "Wholesale Prices",
-      hero_title: "Premium FMCG Products at Wholesale Prices",
+      hero_badge: "Best Prices",
+      hero_title: "Premium FMCG Products at Best Prices",
       hero_subtitle: "India's trusted platform for retailers — real brands, bulk ordering, doorstep delivery.",
 
       // Sidebar
       categories_title: "Categories",
       cat_all: "All Products",
-      
+
       cat_baby_care: "Baby Care",
       cat_bc_newborn: "0M+ / Newborn kit",
       cat_skin_face_care: "Skin/Face Care",
@@ -33,6 +33,18 @@ const I18N = (() => {
       cat_dental_care: "Dental Care",
       cat_dc_paste: "Toothpaste / Powder",
       cat_dc_brush: "Toothbrush",
+      cat_sfc_powder: "Talcum Powder",
+      cat_sfc_lotion: "Body Lotions",
+      cat_sfc_lip_balm: "Lip Care",
+      cat_sfc_sunscreen: "Sun Care",
+      cat_bc_accessories: "Baby Accessories",
+      cat_bc_diaper: "Baby Diapers",
+      cat_dc_powder: "Tooth Powder",
+      cat_health_care: "Health & Ayurveda",
+      cat_air_freshener: "Air Fresheners",
+      cat_pest_control: "Pest Control",
+      cat_other: "Other Products",
+
       cat_sanitary_pad: "Sanitary Pad",
       cat_toiletries: "Toiletries",
       cat_fabric_utensil_care: "Fabric / Utensil Care",
@@ -60,12 +72,12 @@ const I18N = (() => {
       product: "product",
       sort_name_asc: "Name A-Z",
       sort_name_desc: "Name Z-A",
-      sort_price_asc: "Price: Low to High",
-      sort_price_desc: "Price: High to Low",
+      sort_price_asc: "MRP: Low to High",
+      sort_price_desc: "MRP: High to Low",
       sort_discount: "Best Discount",
 
       // Product card
-      wholesale_price: "Wholesale Price",
+      wholesale_price: "Price",
       add_to_cart: "Add to Cart",
       add_to_cart_short: "+ Add to Cart",
       out_of_stock: "Out of Stock",
@@ -107,17 +119,17 @@ const I18N = (() => {
       print_order: "Print Order",
 
       // Footer
-      footer_text: "Wholesale FMCG Distribution",
+      footer_text: "FMCG Distribution",
     },
 
     hi: {
       // Header / Nav
-      logo_subtitle: "थोक FMCG कैटलॉग",
+      logo_subtitle: "FMCG उत्पाद कैटलॉग",
       search_placeholder: "उत्पाद, ब्रांड, श्रेणी खोजें…",
 
       // Hero
-      hero_badge: "थोक मूल्य",
-      hero_title: "प्रीमियम FMCG उत्पाद थोक मूल्य पर",
+      hero_badge: "सर्वोत्तम मूल्य",
+      hero_title: "प्रीमियम FMCG उत्पाद सर्वोत्तम मूल्य पर",
       hero_subtitle: "भारत का भरोसेमंद प्लेटफ़ॉर्म खुदरा विक्रेताओं के लिए — असली ब्रांड, बल्क ऑर्डर, डोरस्टेप डिलीवरी।",
 
       // Sidebar
@@ -140,6 +152,18 @@ const I18N = (() => {
       cat_dental_care: "डेंटल केयर (Dental Care)",
       cat_dc_paste: "टूथपेस्ट/पाउडर",
       cat_dc_brush: "टूथब्रश",
+      cat_sfc_powder: "टैल्कम पाउडर",
+      cat_sfc_lotion: "बॉडी लोशन",
+      cat_sfc_lip_balm: "लिप केयर",
+      cat_sfc_sunscreen: "सन केयर",
+      cat_bc_accessories: "बेबी एक्सेसरीज",
+      cat_bc_diaper: "बेबी डायपर",
+      cat_dc_powder: "दंत मंजन",
+      cat_health_care: "स्वास्थ्य एवं आयुर्वेद",
+      cat_air_freshener: "एयर फ्रेशनर",
+      cat_pest_control: "कीट नियंत्रण",
+      cat_other: "अन्य उत्पाद",
+
       cat_sanitary_pad: "सेनेटरी पैड (Sanitary Pad)",
       cat_toiletries: "टायलेटरीज (Toiletries)",
       cat_fabric_utensil_care: "फैब्रिक/बर्तन केयर",
@@ -167,12 +191,12 @@ const I18N = (() => {
       product: "उत्पाद",
       sort_name_asc: "नाम A-Z",
       sort_name_desc: "नाम Z-A",
-      sort_price_asc: "मूल्य: कम से ज़्यादा",
-      sort_price_desc: "मूल्य: ज़्यादा से कम",
+      sort_price_asc: "MRP: कम से ज़्यादा",
+      sort_price_desc: "MRP: ज़्यादा से कम",
       sort_discount: "सर्वश्रेष्ठ छूट",
 
       // Product card
-      wholesale_price: "थोक मूल्य",
+      wholesale_price: "मूल्य",
       add_to_cart: "कार्ट में डालें",
       add_to_cart_short: "+ कार्ट में डालें",
       out_of_stock: "स्टॉक में नहीं",
@@ -214,7 +238,7 @@ const I18N = (() => {
       print_order: "ऑर्डर प्रिंट करें",
 
       // Footer
-      footer_text: "थोक FMCG वितरण",
+      footer_text: "FMCG वितरण",
     }
   };
 
@@ -263,5 +287,11 @@ const I18N = (() => {
     return newLang;
   }
 
-  return { setLanguage, t, getLang, toggle };
+  function _addTranslation(lang, key, value) {
+    if (translations[lang]) {
+      translations[lang][key] = value;
+    }
+  }
+
+  return { setLanguage, t, getLang, toggle, _addTranslation };
 })();

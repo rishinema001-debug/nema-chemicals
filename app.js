@@ -10,68 +10,171 @@
   const $$ = (sel) => document.querySelectorAll(sel);
 
   // ===== Data Source Sync =====
+  // Reads from localStorage (written by Admin Panel) and merges with
+  // static CATEGORIES/PRODUCTS from products.js so the storefront
+  // instantly reflects any admin changes.
   let APP_PRODUCTS = [];
   let APP_CATEGORIES = [];
-  
+  let APP_BRANDS = [];
+
   function syncData() {
+    // ---------- Products ----------
     const rawProducts = localStorage.getItem("nema_admin_products");
-    if(rawProducts) {
-      APP_PRODUCTS = JSON.parse(rawProducts);
+    if (rawProducts) {
+      try { APP_PRODUCTS = JSON.parse(rawProducts); } catch (_) { APP_PRODUCTS = []; }
+      // Auto-merge new products from products.js into localStorage
+      if (typeof PRODUCTS !== "undefined" && Array.isArray(PRODUCTS)) {
+        let added = false;
+        PRODUCTS.forEach(p => {
+          if (!APP_PRODUCTS.find(ap => ap.id === p.id)) {
+            APP_PRODUCTS.unshift(p);
+            added = true;
+          }
+        });
+        if (added) localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
+      }
     } else {
       APP_PRODUCTS = typeof PRODUCTS !== "undefined" ? PRODUCTS : [];
+      localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
     }
-    
-    if(!Array.isArray(APP_PRODUCTS)) APP_PRODUCTS = [];
+    if (!Array.isArray(APP_PRODUCTS)) APP_PRODUCTS = [];
 
+    // ---------- Categories ----------
     const rawCats = localStorage.getItem("nema_admin_categories");
-    let storedCategories = [];
-    if(rawCats) {
-      storedCategories = JSON.parse(rawCats);
+    let stored = [];
+    if (rawCats) {
+      try { stored = JSON.parse(rawCats); } catch (_) { stored = []; }
     }
-    
-    if(!Array.isArray(storedCategories)) storedCategories = [];
-    
-    // Auto-merge logic for static categories
+    if (!Array.isArray(stored)) stored = [];
+
+    // Merge static definitions so new categories always show up
     if (typeof CATEGORIES !== "undefined") {
-      const staticCategories = CATEGORIES;
-      staticCategories.forEach(sc => {
-        if (!storedCategories.find(pc => pc.id === sc.id)) {
-          storedCategories.push(sc);
+      CATEGORIES.forEach(sc => {
+        if (!stored.find(pc => pc.id === sc.id)) {
+          stored.push(sc);
         }
       });
-      storedCategories.forEach(pc => {
-         const sc = staticCategories.find(s => s.id === pc.id);
-         if (sc) {
-            pc.nameKey = sc.nameKey;
-            pc.icon = sc.icon;
-            pc.isSub = sc.isSub;
-            pc.parent = sc.parent;
-         }
+      // Keep nameKey / hierarchy fresh from source
+      stored.forEach(pc => {
+        const sc = CATEGORIES.find(s => s.id === pc.id);
+        if (sc) {
+          pc.nameKey = sc.nameKey;
+          pc.icon    = sc.icon;
+          pc.isSub   = sc.isSub;
+          pc.parent  = sc.parent;
+        }
       });
     }
-    APP_CATEGORIES = storedCategories;
+
+    // Guarantee "all" entry exists at position 0
+    if (!stored.find(c => c.id === "all")) {
+      stored.unshift({ id: "all", nameKey: "cat_all", icon: "•" });
+    }
+    APP_CATEGORIES = stored;
+
+    // Register custom category translations
+    if (typeof I18N !== "undefined" && I18N._addTranslation) {
+      APP_CATEGORIES.forEach(cat => {
+        if (cat.nameEn) I18N._addTranslation("en", cat.nameKey, cat.nameEn);
+        if (cat.nameHi) I18N._addTranslation("hi", cat.nameKey, cat.nameHi);
+      });
+    }
+
+    // ---------- Brands ----------
+    const rawBrands = localStorage.getItem("nema_admin_brands");
+    if (rawBrands) {
+      try { APP_BRANDS = JSON.parse(rawBrands); } catch (_) { APP_BRANDS = []; }
+    } else {
+      const uniqueBrands = [...new Set(APP_PRODUCTS.map(p => p.brand))].filter(b => b);
+      APP_BRANDS = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
+    }
+    if (!Array.isArray(APP_BRANDS)) APP_BRANDS = [];
+
+  }
+
+  // ===== Image Resolver (uses static IMAGE_INDEX from image-index.js) =====
+  // IMAGE_INDEX is loaded globally from image-index.js before this file.
+  // If Electron is available, we also try to refresh from filesystem.
+  let APP_IMAGES_CACHE = [];
+
+  async function loadImagesCache() {
+      // First, try loading from static IMAGE_INDEX (works in both web and Electron)
+      if (typeof IMAGE_INDEX !== 'undefined' && Array.isArray(IMAGE_INDEX)) {
+          APP_IMAGES_CACHE = [...IMAGE_INDEX];
+      }
+
+      // In Electron, also try reading from filesystem for the freshest list
+      if (typeof window.electronAPI !== 'undefined' && window.electronAPI.readImagesDirectory) {
+          try {
+              const files = await window.electronAPI.readImagesDirectory();
+              if (files && files.length > 0) {
+                  files.forEach(f => {
+                      if (!APP_IMAGES_CACHE.includes(f)) APP_IMAGES_CACHE.push(f);
+                  });
+              }
+          } catch(e) {}
+      }
+
+      if (APP_IMAGES_CACHE.length > 0) {
+          renderProducts(); // re-render once images are found
+      }
+  }
+
+  function resolveProductImage(product) {
+      const fallback = "images/products/grocery-blurred.png";
+      const explicitImg = (product.image || "").trim();
+
+      // 1. No image set at all → placeholder
+      if (!explicitImg) return fallback;
+
+      // 2. External URL or data URI → use directly
+      if (explicitImg.startsWith("http") || explicitImg.startsWith("data:")) {
+          return explicitImg;
+      }
+
+      // 3. Explicit local path — verify it exists in our index
+      const explicitFilename = decodeURI(explicitImg.split("/").pop()).toLowerCase();
+      if (APP_IMAGES_CACHE.some(f => decodeURI(f.split("/").pop()).toLowerCase() === explicitFilename)) {
+          return encodeURI(explicitImg);
+      }
+
+      // 4. The path might be set but not matching index exactly (old format like images/colgate_toothpaste.png vs products/colgate-toothpaste.png)
+      //    Try to find the file by just the base name
+      const cleanExplicit = explicitFilename.replace(/\.(png|jpe?g|gif|webp|svg)$/i, "").replace(/[-_ ]/g, "");
+      const found = APP_IMAGES_CACHE.find(f => {
+          const clean = decodeURI(f.split("/").pop()).toLowerCase().replace(/\.(png|jpe?g|gif|webp|svg)$/i, "").replace(/[-_ ]/g, "");
+          return clean === cleanExplicit;
+      });
+      if (found) return encodeURI("images/" + found);
+
+      // 5. If explicit path was set but file not found in index, still try it (might be valid)
+      return encodeURI(explicitImg);
   }
 
   // ===== State =====
   const state = {
     activeCategory: "all",
+    expandedCategory: null,
+    activeBrand: null,
     searchQuery: "",
+    categorySearchQuery: "",
     sortBy: "name-asc",
   };
 
   // ===== DOM References =====
-  const categoryListEl = $("#categoryList");
-  const productGridEl = $("#productGrid");
-  const resultCountEl = $("#resultCount");
-  const searchBarEl = $("#searchBar");
-  const sortSelectEl = $("#sortSelect");
-  const emptyStateEl = $("#emptyState");
-  const toastContainer = $("#toastContainer");
+  const categoryListEl   = $("#categoryList");
+  const categorySearchEl = $("#categorySearch");
+  const productGridEl    = $("#productGrid");
+  const resultCountEl    = $("#resultCount");
+  const searchBarEl      = $("#searchBar");
+  const sortSelectEl     = $("#sortSelect");
+  const emptyStateEl     = $("#emptyState");
+  const toastContainer   = $("#toastContainer");
   const mobileMenuToggle = $("#mobileMenuToggle");
-  const sidebarEl = $("#sidebar");
-  const langToggle = $("#langToggle");
-  const langLabel = $("#langLabel");
-  const printCatalogBtn = $("#printCatalogBtn");
+  const sidebarEl        = $("#sidebar");
+  const langToggle       = $("#langToggle");
+  const langLabel        = $("#langLabel");
+  const printCatalogBtn  = $("#printCatalogBtn");
 
   // Modal DOM
   const modalOverlay = $("#modalOverlay");
@@ -87,106 +190,144 @@
     return typeof product.desc === "object" ? (product.desc[lang] || product.desc.en) : product.desc;
   }
 
-  // ===== Render Categories =====
+  window.clearActiveBrand = function() {
+    state.activeBrand = null;
+    renderStoreBrands($("#storeBrandSearch") ? $("#storeBrandSearch").value : "");
+    renderCategories();
+    renderProducts();
+    const hero = $("#heroBanner");
+    if (hero) hero.style.display = "flex";
+    const storeBrandsSection = $("#storeBrandsSection");
+    if (storeBrandsSection) storeBrandsSection.style.display = "block";
+  };
+
+  // ===== Render Categories (Accordion) =====
   function renderCategories() {
-    const lang = I18N.getLang();
-
-    // Build hierarchy
-    const mainCategories = APP_CATEGORIES.filter(c => !c.isSub);
+    // Only show main (top-level) categories; subs appear via accordion
+    let mainCategories = APP_CATEGORIES.filter(c => !c.isSub);
     
-    categoryListEl.innerHTML = mainCategories.map(cat => {
-      // Find children
-      const children = APP_CATEGORIES.filter(c => c.isSub && c.parent === cat.id);
-      
-      const count = cat.id === "all"
-        ? APP_PRODUCTS.length
-        : APP_PRODUCTS.filter(p => p.category === cat.id || children.some(ch => ch.id === p.category)).length;
-        
-      const isExpanded = state.expandedCategory === cat.id;
+    // Sort so "all" is always 1st, then by serial
+    mainCategories.sort((a, b) => {
+       if (a.id === "all") return -1;
+       if (b.id === "all") return 1;
+       let serialA = typeof a.serial === 'number' ? a.serial : 9999;
+       let serialB = typeof b.serial === 'number' ? b.serial : 9999;
+       return serialA - serialB;
+    });
 
+    let baseProducts = APP_PRODUCTS;
+    if (state.activeBrand) {
+      const bObj = APP_BRANDS.find(b => b.id === state.activeBrand);
+      if (bObj) {
+        baseProducts = APP_PRODUCTS.filter(p => p.brand.toLowerCase() === bObj.name.toLowerCase());
+      }
+    }
+
+    categoryListEl.innerHTML = mainCategories.map(cat => {
+      let children = APP_CATEGORIES.filter(c => c.isSub && c.parent === cat.id);
+
+      if (state.activeBrand && cat.id !== "all") {
+         children = children.filter(sub => baseProducts.some(p => p.category === sub.id));
+      }
+
+      // If category search is active, filter groups
+      if (state.categorySearchQuery) {
+        const query = state.categorySearchQuery.toLowerCase();
+        const catName = I18N.t(cat.nameKey).toLowerCase();
+        
+        let childMatches = children.filter(c => I18N.t(c.nameKey).toLowerCase().includes(query));
+        let matches = catName.includes(query) || childMatches.length > 0;
+        
+        if (!matches && cat.id !== "all") {
+          return ""; // Hide this main category group
+        }
+        
+        if (childMatches.length > 0 && !catName.includes(query)) {
+           // if only children match, only show matching children
+           children = childMatches;
+        }
+      }
+
+      // Count includes children's products
+      const count = cat.id === "all"
+        ? baseProducts.length
+        : baseProducts.filter(p =>
+            p.category === cat.id || children.some(ch => ch.id === p.category)
+          ).length;
+
+      // Hide category if it has 0 products and a brand is active
+      if (state.activeBrand && cat.id !== "all" && count === 0) {
+        return "";
+      }
+
+      let isExpanded = state.expandedCategory === cat.id;
+      if (state.categorySearchQuery && cat.id !== "all") isExpanded = true; 
+      
+      const isActive   = state.activeCategory === cat.id;
+      const showingKids = children.length > 0;
+
+      // Build sub-list HTML
       let subHtml = "";
-      if(children.length > 0) {
-          subHtml = `<ul class="sub-category-list" style="display: ${isExpanded ? 'block' : 'none'}; padding-left: 0; list-style: none; margin: 0; background: var(--bg-card); border-radius: 4px; border: 1px solid var(--border-light); overflow: hidden; margin-top: 4px; transition: all 0.3s ease;">` +
-            children.map(sub => {
-                const subCount = APP_PRODUCTS.filter(p => p.category === sub.id).length;
-                return `
-                    <li>
-                        <div class="category-item ${state.activeCategory === sub.id ? 'active' : ''}"
-                             data-category="${sub.id}"
-                             data-is-sub="true"
-                             style="padding: 10px 16px; padding-left: 32px; font-size: 13px; border-bottom: 1px solid var(--border-light); box-shadow: none; margin: 0; border-radius: 0;">
-                            <div class="category-icon" style="width: 16px; height: 16px; font-size: 14px; background: transparent;">${sub.icon}</div>
-                            <span class="category-name">${I18N.t(sub.nameKey)}</span>
-                            <span class="category-count">${subCount}</span>
-                        </div>
-                    </li>
-                `;
-            }).join('') + 
-          `</ul>`;
+      if (showingKids) {
+        const subItems = children.map(sub => {
+          const subCount  = baseProducts.filter(p => p.category === sub.id).length;
+          const subActive = state.activeCategory === sub.id;
+          return `
+            <li>
+              <div class="category-item category-sub ${subActive ? 'active' : ''}"
+                   data-category="${sub.id}"
+                   data-is-sub="true">
+                <span class="sub-dot">›</span>
+                <span class="category-name">${I18N.t(sub.nameKey)}</span>
+                <span class="category-count">${subCount}</span>
+              </div>
+            </li>`;
+        }).join("");
+
+        subHtml = `<ul class="sub-category-list ${isExpanded ? 'expanded' : ''}">${subItems}</ul>`;
       }
 
       return `
-        <li>
-          <div class="category-item main-cat-item ${state.activeCategory === cat.id ? 'active' : ''}"
+        <li class="cat-group">
+          <div class="category-item main-cat-item ${isActive ? 'active' : ''}"
                data-category="${cat.id}"
-               data-has-children="${children.length > 0}">
-            <div class="category-icon" style="background: transparent;">${cat.icon}</div>
+               data-has-children="${showingKids}">
+            <span class="cat-bullet">•</span>
             <span class="category-name">${I18N.t(cat.nameKey)}</span>
             <span class="category-count">${count}</span>
-            ${children.length > 0 ? `<span style="margin-left:auto; font-size: 10px; opacity:0.5; transform: rotate(${isExpanded ? '180deg' : '0'}); transition: transform 0.2s;">▼</span>` : ''}
+            ${showingKids ? `<span class="cat-chevron ${isExpanded ? 'open' : ''}">‹</span>` : ''}
           </div>
           ${subHtml}
-        </li>
-      `;
-    }).join('');
+        </li>`;
+    }).join("");
 
     // Bind click events
     $$(".category-item").forEach(item => {
-      item.addEventListener("click", (e) => {
-        const catId = item.dataset.category;
+      item.addEventListener("click", () => {
+        const catId      = item.dataset.category;
         const hasChildren = item.dataset.hasChildren === "true";
-        const isSub = item.dataset.isSub === "true";
-        
+        const isSub      = item.dataset.isSub === "true";
+
         if (hasChildren && !isSub) {
-            // Toggle accordion
-            if (state.expandedCategory === catId) {
-                state.expandedCategory = null; 
-            } else {
-                state.expandedCategory = catId;
-            }
-            state.activeCategory = catId; // Still filter by main category when clicked
-            renderCategories();
-            renderProducts();
+          // Toggle accordion open/close
+          state.expandedCategory = state.expandedCategory === catId ? null : catId;
+          state.activeCategory = catId;
         } else {
-            // Simple selection
-            state.activeCategory = catId;
-            renderCategories();
-            renderProducts();
-            if(window.innerWidth <= 768) {
-               sidebarEl.classList.remove("open");
-            }
+          state.activeCategory = catId;
+          if (window.innerWidth <= 768) sidebarEl.classList.remove("open");
         }
+        renderCategories();
+        renderProducts();
       });
     });
   }
+
   // ===== Filter & Sort Products =====
   function getFilteredProducts() {
     let filtered = [...APP_PRODUCTS];
 
-    // Category filter
-    if (state.activeCategory !== "all") {
-      const activeCatObj = APP_CATEGORIES.find(c => c.id === state.activeCategory);
-      if (activeCatObj && !activeCatObj.isSub) {
-          // If active is Main category, show its products + its children's products
-          const childrenIds = APP_CATEGORIES.filter(c => c.isSub && c.parent === state.activeCategory).map(c => c.id);
-          filtered = filtered.filter(p => p.category === state.activeCategory || childrenIds.includes(p.category));
-      } else {
-          filtered = filtered.filter(p => p.category === state.activeCategory);
-      }
-    }
-
-    // Search filter
     if (state.searchQuery) {
+      // Global search ignores category filter
       const q = state.searchQuery.toLowerCase();
       filtered = filtered.filter(p =>
         pName(p).toLowerCase().includes(q) ||
@@ -194,6 +335,26 @@
         p.sku.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q)
       );
+    } else if (state.activeCategory !== "all") {
+      const activeCatObj = APP_CATEGORIES.find(c => c.id === state.activeCategory);
+      if (activeCatObj && !activeCatObj.isSub) {
+        // Main category → include its own + children products
+        const childrenIds = APP_CATEGORIES
+          .filter(c => c.isSub && c.parent === state.activeCategory)
+          .map(c => c.id);
+        filtered = filtered.filter(p =>
+          p.category === state.activeCategory || childrenIds.includes(p.category)
+        );
+      } else {
+        filtered = filtered.filter(p => p.category === state.activeCategory);
+      }
+    }
+
+    if (state.activeBrand) {
+      const bObj = APP_BRANDS.find(b => b.id === state.activeBrand);
+      if (bObj) {
+        filtered = filtered.filter(p => p.brand.toLowerCase() === bObj.name.toLowerCase());
+      }
     }
 
     // Sort
@@ -205,56 +366,67 @@
         filtered.sort((a, b) => pName(b).localeCompare(pName(a)));
         break;
       case "price-asc":
-        filtered.sort((a, b) => a.price - b.price);
+        filtered.sort((a, b) => a.mrp - b.mrp);
         break;
       case "price-desc":
-        filtered.sort((a, b) => b.price - a.price);
-        break;
-      case "discount":
-        filtered.sort((a, b) => {
-          const discA = a.mrp > a.price ? ((a.mrp - a.price) / a.mrp) : 0;
-          const discB = b.mrp > b.price ? ((b.mrp - b.price) / b.mrp) : 0;
-          return discB - discA;
-        });
+        filtered.sort((a, b) => b.mrp - a.mrp);
         break;
     }
 
     return filtered;
   }
 
-  // ===== Render Products =====
-  function renderProducts() {
-    const filtered = getFilteredProducts();
-    const t = I18N.t;
-
-    resultCountEl.innerHTML = `${t('showing')} <strong>${filtered.length}</strong> ${filtered.length !== 1 ? t('products') : t('product')}`;
-
-    if (filtered.length === 0) {
-      productGridEl.style.display = "none";
-      emptyStateEl.style.display = "flex";
-      return;
+  // ===== Render Brands Carousel =====
+  function renderStoreBrands(query = "") {
+    const carouselEl = $("#storeBrandsCarousel");
+    if (!carouselEl) return;
+    const q = query.toLowerCase();
+    
+    let filteredBrands = APP_BRANDS;
+    if (q) {
+       filteredBrands = filteredBrands.filter(b => b.name.toLowerCase().includes(q));
     }
 
-    productGridEl.style.display = "";
-    emptyStateEl.style.display = "none";
+    if (filteredBrands.length === 0) {
+       carouselEl.innerHTML = `<div style="font-size:13px; color:#64748b; padding:10px;">No brands found matching "${query}"</div>`;
+       return;
+    }
 
-    productGridEl.innerHTML = filtered.map((product, i) => {
-      const discount = product.mrp > product.price
-        ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
-        : 0;
+    carouselEl.innerHTML = filteredBrands.map(b => {
+      const isActive = state.activeBrand === b.id;
+      return `
+        <div class="store-brand-circle ${isActive ? 'active' : ''}" data-id="${b.id}" style="flex: 0 0 80px; display:flex; flex-direction:column; align-items:center; cursor:pointer;">
+           <div style="width:70px; height:70px; border-radius:50%; background:#fff; border:${isActive ? '3px solid #2563eb' : '1px solid #e2e8f0'}; display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.05); transition:transform 0.2s; transform:${isActive ? 'scale(1.05)' : 'scale(1)'}">
+             ${b.image ? `<img src="${b.image}" style="width:100%; height:100%; object-fit:contain; padding:5px;">` : `<span style="font-size:24px; font-weight:800; color:#cbd5e1;">${b.name.charAt(0).toUpperCase()}</span>`}
+           </div>
+           <span style="font-size:11px; font-weight:600; color:#334155; margin-top:8px; text-align:center; max-width:80px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${b.name}</span>
+        </div>
+      `;
+    }).join("");
 
-      const badgeMap = {
-        new: `<span class="product-badge badge-new">${t('badge_new')}</span>`,
-        sale: `<span class="product-badge badge-sale">${t('badge_sale')}</span>`,
-        bestseller: `<span class="product-badge badge-bestseller">${t('badge_bestseller')}</span>`,
-        organic: `<span class="product-badge badge-organic">${t('badge_organic')}</span>`,
-      };
+    $$(".store-brand-circle").forEach(el => {
+      el.addEventListener("click", () => {
+        const id = el.dataset.id;
+        state.activeBrand = state.activeBrand === id ? null : id;
+        renderStoreBrands($("#storeBrandSearch").value);
+        renderCategories();
+        renderProducts();
+        
+        // Hide/show hero banner and brands section based on brand selection
+        const hero = $("#heroBanner");
+        if (hero) hero.style.display = state.activeBrand ? "none" : "flex";
+        const storeBrandsSection = $("#storeBrandsSection");
+        if (storeBrandsSection) storeBrandsSection.style.display = state.activeBrand ? "none" : "block";
+      });
+    });
+  }
 
+  function renderProductCardHTML(product, i, t, badgeMap) {
       return `
         <div class="product-card" data-id="${product.id}" id="product-${product.id}" style="animation-delay: ${i * 0.05}s;">
           <div class="product-image-container">
             ${product.badge ? `<div class="product-badges">${badgeMap[product.badge] || ''}</div>` : ''}
-            <img src="${product.image}" alt="${pName(product)}" class="product-image" loading="lazy"
+            <img src="${resolveProductImage(product)}" alt="${pName(product)}" class="product-image" loading="lazy"
                  onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23f0f0f0%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2216%22 fill=%22%23999%22>Image</text></svg>';">
           </div>
           <div class="product-info">
@@ -265,58 +437,167 @@
               <span class="product-sku">${product.sku}</span>
             </div>
             ${product.variants && product.variants.length > 0 ? `
-              <div class="variant-selector" style="display:flex;gap:4px;margin-top:4px;">
-                ${product.variants.map((v, idx) => `
-                  <button class="variant-pill" style="font-size:9px;padding:2px 6px;border:1px solid #ccc;border-radius:12px;background:#f9f9f9;cursor:pointer;" data-id="${product.id}" data-idx="${idx}" data-price="${v.price}" data-mrp="${v.mrp}" data-val="${v.label||parseFloat(v.weight)||v}">
-                    ${v.label || v.weight || v}
-                  </button>
+              <div class="variant-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap:4px; margin-top:8px;">
+                ${product.variants.map(v => `
+                  <div style="border:1px solid #e5e9f0; border-radius:4px; padding:4px; text-align:center; background:#f8fafc;">
+                    <div style="font-size:10px; color:#64748b; margin-bottom:2px;">${v.label || v.weight || '-'}</div>
+                    <div style="font-size:11px; font-weight:700; color:#0f172a;">₹${v.mrp}</div>
+                  </div>
                 `).join('')}
               </div>
-            ` : ''}
-            <div class="product-pricing">
-              <span class="product-price">₹${product.price}</span>
-              ${product.mrp > product.price ? `<span class="product-mrp">₹${product.mrp}</span>` : ''}
-              ${discount > 0 ? `<span class="product-discount">${discount}% ${t('off')}</span>` : ''}
-            </div>
+            ` : `
+              <div style="display:inline-block; border:1px solid #e5e9f0; border-radius:4px; padding:4px 10px; text-align:center; background:#f8fafc; margin-top:8px;">
+                <div style="font-size:10px; color:#64748b; margin-bottom:2px;">MRP</div>
+                <div style="font-size:13px; font-weight:700; color:#0f172a;">₹${product.mrp}</div>
+              </div>
+            `}
             <div class="product-stock-label ${product.stock === 0 ? 'out' : product.stock <= 50 ? 'low' : 'ok'}">
               ${product.stock === 0 ? t('out_of_stock') : product.stock <= 50 ? `${t('low_stock')} (${product.stock})` : `${t('in_stock')}`}
             </div>
           </div>
         </div>
       `;
-    }).join('');
+  }
+
+  // ===== Render Products =====
+  function renderProducts() {
+    const filtered = getFilteredProducts();
+    const t = I18N.t;
+
+    resultCountEl.innerHTML = `${t('showing')} <strong>${filtered.length}</strong> ${filtered.length !== 1 ? t('products') : t('product')}`;
+
+    if (filtered.length === 0) {
+      if (state.activeBrand) {
+        productGridEl.style.display = "";
+        emptyStateEl.style.display = "flex";
+        const bObj = APP_BRANDS.find(b => b.id === state.activeBrand);
+        if (bObj) {
+          productGridEl.innerHTML = `
+          <div style="grid-column: 1/-1; margin-bottom: 15px;">
+            <button onclick="window.clearActiveBrand()" style="background:none; border:none; color:#2563eb; font-weight:600; font-size:14px; cursor:pointer; display:flex; align-items:center; gap:6px; padding:0; font-family: inherit;">
+              <span style="font-size:18px;">←</span> Back to Main Page
+            </button>
+          </div>
+          <div style="grid-column: 1/-1; display:flex; justify-content:space-between; align-items:center; background:#1e293b; color:white; padding:20px; border-radius:12px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:15px;">
+               <div style="width:50px; height:50px; border-radius:50%; background:white; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                 ${bObj.image ? `<img src="${bObj.image}" style="width:100%;height:100%;object-fit:contain;padding:4px;">` : `<span style="color:#1e293b;font-weight:700;font-size:20px;">${bObj.name.charAt(0).toUpperCase()}</span>`}
+               </div>
+               <div>
+                 <h2 style="margin:0; font-size:22px; font-weight:800;">${bObj.name} Store</h2>
+                 <p style="margin:4px 0 0 0; font-size:13px; color:#cbd5e1;">All products matching this brand.</p>
+               </div>
+            </div>
+            <button onclick="window.clearActiveBrand()" style="background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.2); padding:8px 16px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:6px;">
+              Home
+            </button>
+          </div>`;
+        } else {
+          productGridEl.style.display = "none";
+        }
+      } else {
+        productGridEl.style.display = "none";
+        emptyStateEl.style.display = "flex";
+      }
+      return;
+    }
+
+    productGridEl.style.display = "";
+    emptyStateEl.style.display = "none";
+
+    const badgeMap = {
+      new: `<span class="product-badge badge-new">${t('badge_new')}</span>`,
+      sale: `<span class="product-badge badge-sale">${t('badge_sale')}</span>`,
+      bestseller: `<span class="product-badge badge-bestseller">${t('badge_bestseller')}</span>`,
+      organic: `<span class="product-badge badge-organic">${t('badge_organic')}</span>`,
+    };
+
+    if (state.activeBrand) {
+      // Render Category Wise
+      const categoriesFound = new Set(filtered.map(p => p.category));
+      let groupedHtml = "";
+      
+      const bObj = APP_BRANDS.find(b => b.id === state.activeBrand);
+      
+      groupedHtml += `
+      <div style="grid-column: 1/-1; margin-bottom: 15px;">
+        <button onclick="window.clearActiveBrand()" style="background:none; border:none; color:#2563eb; font-weight:600; font-size:14px; cursor:pointer; display:flex; align-items:center; gap:6px; padding:0; font-family: inherit;">
+          <span style="font-size:18px;">←</span> Back to Main Page
+        </button>
+      </div>
+      <div style="grid-column: 1/-1; display:flex; justify-content:space-between; align-items:center; background:#1e293b; color:white; padding:20px; border-radius:12px; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:15px;">
+           <div style="width:50px; height:50px; border-radius:50%; background:white; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+             ${bObj.image ? `<img src="${bObj.image}" style="width:100%;height:100%;object-fit:contain;padding:4px;">` : `<span style="color:#1e293b;font-weight:700;font-size:20px;">${bObj.name.charAt(0).toUpperCase()}</span>`}
+           </div>
+           <div>
+             <h2 style="margin:0; font-size:22px; font-weight:800;">${bObj.name} Store</h2>
+             <p style="margin:4px 0 0 0; font-size:13px; color:#cbd5e1;">All products matching this brand.</p>
+           </div>
+        </div>
+        <button onclick="window.clearActiveBrand()" style="background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.2); padding:8px 16px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:6px;">
+          Home
+        </button>
+      </div>`;
+
+      for (const catId of Array.from(categoriesFound).sort()) {
+         const productsInCat = filtered.filter(p => p.category === catId);
+         const cObj = APP_CATEGORIES.find(c => c.id === catId);
+         const catName = cObj ? I18N.t(cObj.nameKey) : catId;
+         
+         groupedHtml += `
+            <div style="grid-column: 1/-1; border-bottom: 2px solid #e2e8f0; margin-top:20px; margin-bottom:10px; padding-bottom:10px;">
+               <h3 style="margin:0; font-size:1.2rem; font-weight:700; color:#0f172a; text-transform:uppercase;">${catName}</h3>
+            </div>
+            ${productsInCat.map((p, i) => renderProductCardHTML(p, i, t, badgeMap)).join('')}
+         `;
+      }
+      productGridEl.innerHTML = groupedHtml;
+    } else {
+      let categoryHeaderHtml = '';
+      if (state.activeCategory && state.activeCategory !== 'all') {
+        const currentCat = APP_CATEGORIES.find(c => c.id === state.activeCategory);
+        if (currentCat) {
+          let titleHtml = '';
+          if (currentCat.isSub && currentCat.parent) {
+            const parentCat = APP_CATEGORIES.find(c => c.id === currentCat.parent);
+            if (parentCat) {
+               const pName = I18N.t(parentCat.nameKey) || parentCat.nameEn;
+               const cName = I18N.t(currentCat.nameKey) || currentCat.nameEn;
+               titleHtml = `
+                 <div style="display: flex; flex-direction: column;">
+                   <span style="font-family: 'Pacifico', cursive; font-size: 1.8rem; font-weight: normal; color: #2563eb; letter-spacing: 1px;">${pName}</span>
+                   <span style="font-size: 0.95rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: -5px;">${cName}</span>
+                 </div>
+               `;
+            }
+          }
+          if (!titleHtml) {
+             const cName = I18N.t(currentCat.nameKey) || currentCat.nameEn;
+             titleHtml = `
+               <div style="display: flex; flex-direction: column;">
+                 <span style="font-family: 'Pacifico', cursive; font-size: 1.8rem; font-weight: normal; color: #2563eb; letter-spacing: 1px;">${cName}</span>
+               </div>
+             `;
+          }
+          categoryHeaderHtml = `
+            <div style="grid-column: 1/-1; border-bottom: 2px dashed #e2e8f0; margin-bottom:20px; padding-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+              ${titleHtml}
+              <button onclick="document.querySelector('.sidebar-menu-item[data-id=\\'all\\']')?.click()" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:6px 14px; border-radius:20px; cursor:pointer; font-size:13px; font-weight:600; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                📦 All Products
+              </button>
+            </div>
+          `;
+        }
+      }
+      productGridEl.innerHTML = categoryHeaderHtml + filtered.map((product, i) => renderProductCardHTML(product, i, t, badgeMap)).join('');
+    }
 
     // Bind product card click (open modal)
     $$(".product-card").forEach(card => {
       card.addEventListener("click", (e) => {
-        if(e.target.classList.contains("variant-pill")) return;
+        // Prevent if we clicked inside a button or similar in future
         openModal(parseInt(card.dataset.id));
-      });
-    });
-
-    // Bind variant pills in cards
-    $$(".variant-pill").forEach(pill => {
-      pill.addEventListener("click", (e) => {
-        e.stopPropagation();
-        // Update price and mrp on the card
-        const card = pill.closest(".product-card");
-        const newPrice = pill.dataset.price;
-        const newMrp = pill.dataset.mrp;
-        const newVal = pill.dataset.val;
-
-        if (newPrice) card.querySelector(".product-price").textContent = `₹${newPrice}`;
-        const mrpEl = card.querySelector(".product-mrp");
-        if (newMrp && mrpEl) {
-          mrpEl.textContent = `₹${newMrp}`;
-          mrpEl.style.display = "";
-        } else if (mrpEl) {
-          mrpEl.style.display = "none";
-        }
-        card.querySelector(".product-weight").textContent = newVal;
-        
-        // highlight active
-        card.querySelectorAll(".variant-pill").forEach(p => p.style.border="1px solid #ccc");
-        pill.style.border = "1px solid var(--accent-primary)";
       });
     });
   }
@@ -328,9 +609,16 @@
 
     const t = I18N.t;
 
-    $("#modalImage").src = product.image;
+    $("#modalImage").src = resolveProductImage(product);
+    $("#modalImage").onerror = function() {
+      this.src = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23f0f0f0%22 width=%22200%22 height=%22200%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2216%22 fill=%22%23999%22>Image</text></svg>';
+    };
     $("#modalImage").alt = pName(product);
-    $("#modalCategory").textContent = t(`cat_${product.category === 'personal_care' ? 'personal_care' : product.category}`);
+
+    // Look up category name safely
+    const catObj = APP_CATEGORIES.find(c => c.id === product.category);
+    $("#modalCategory").textContent = catObj ? I18N.t(catObj.nameKey) : product.category;
+
     $("#modalName").textContent = pName(product);
     $("#modalDesc").textContent = pDesc(product);
     $("#modalWeight").textContent = product.weight;
@@ -344,15 +632,9 @@
         : `${t('in_stock')} (${product.stock} ${t('units')})`;
     $("#modalStock").textContent = stockText;
 
-    const discount = product.mrp > product.price
-      ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
-      : 0;
-
-    $("#modalPrice").textContent = `₹${product.price}`;
-    $("#modalMrp").textContent = product.mrp > product.price ? `₹${product.mrp}` : '';
-    $("#modalMrp").style.display = product.mrp > product.price ? '' : 'none';
-    $("#modalDiscount").textContent = discount > 0 ? `${discount}% ${t('off')}` : '';
-    $("#modalDiscount").style.display = discount > 0 ? '' : 'none';
+    $("#modalPrice").textContent = `MRP: ₹${product.mrp}`;
+    $("#modalMrp").style.display = 'none';
+    $("#modalDiscount").style.display = 'none';
 
     // Variant selector — show if product has variants
     const variantsEl = $("#modalVariants");
@@ -364,16 +646,15 @@
         </button>
       `).join('');
 
-      // Bind variant clicks
       variantsEl.querySelectorAll(".variant-chip").forEach(chip => {
         chip.addEventListener("click", () => {
           variantsEl.querySelectorAll(".variant-chip").forEach(c => c.classList.remove("active"));
           chip.classList.add("active");
           const variant = product.variants[parseInt(chip.dataset.variantIndex)];
-          if (variant.price) $("#modalPrice").textContent = `₹${variant.price}`;
-          if (variant.mrp) {
-            $("#modalMrp").textContent = `₹${variant.mrp}`;
-            $("#modalMrp").style.display = '';
+          if (variant.mrp) $("#modalPrice").textContent = `MRP: ₹${variant.mrp}`;
+          if (false) {
+            $("#modalMrp").textContent = '';
+            $("#modalMrp").style.display = 'none';
           }
           if (variant.weight) $("#modalWeight").textContent = variant.weight;
         });
@@ -409,172 +690,256 @@
 
   // ===== Print Catalog =====
   function handlePrintCatalog() {
-    // Build a clean print view of the currently filtered products
     const filtered = getFilteredProducts();
     const lang = I18N.getLang();
     const t = I18N.t;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      showToast("⚠️ Please allow popups to print the catalog.");
+      showToast("Please allow popups to print the catalog.");
       return;
     }
 
-    const categoryName = state.activeCategory === "all"
-      ? t("cat_all")
-      : t(`cat_${state.activeCategory}`);
+    const catObj = APP_CATEGORIES.find(c => c.id === state.activeCategory);
+    const categoryName = catObj ? I18N.t(catObj.nameKey) : t("cat_all");
 
-    const productRows = filtered.map(product => {
-      const discount = product.mrp > product.price
-        ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
-        : 0;
+    // Group products by category
+    const grouped = {};
+    filtered.forEach(p => {
+       const catId = p.category;
+       if (!grouped[catId]) grouped[catId] = [];
+       grouped[catId].push(p);
+    });
 
-      return `
-        <tr>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e9f0;">
-            <strong>${pName(product)}</strong><br>
-            <span style="color: #5a6a7e; font-size: 12px;">${product.brand} · ${product.weight} · ${product.sku}</span>
-          </td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e9f0; text-align: center;">
-            ${I18N.t(`cat_${product.category}`)}
-          </td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e9f0; text-align: right; font-weight: 700;">
-            ₹${product.price}
-          </td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e9f0; text-align: right; color: #8b96a8; text-decoration: line-through;">
-            ₹${product.mrp}
-          </td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e9f0; text-align: center; color: ${discount > 0 ? '#16a34a' : '#8b96a8'}; font-weight: 600;">
-            ${discount > 0 ? discount + '%' : '—'}
-          </td>
-          <td style="padding: 10px 12px; border-bottom: 1px solid #e5e9f0; text-align: center;">
-            ${product.stock}
-          </td>
-        </tr>
-      `;
-    }).join('');
+    let groupedHtml = "";
+    Object.keys(grouped).forEach(catId => {
+       const cObj = APP_CATEGORIES.find(c => c.id === catId);
+       const catDisplayName = cObj ? I18N.t(cObj.nameKey) : catId;
+       const productsInCat = grouped[catId];
+       
+       const productRows = productsInCat.map(product => {
+         // Determine if we show a single MRP or multiple
+         let mrpContent = "";
+         if (product.variants && product.variants.length > 0) {
+             mrpContent = `<div class="mrp-grid">` + 
+               product.variants.map(v => `
+                 <div class="mrp-item">
+                   <span class="mrp-label">${v.label || v.weight || '-'}</span>
+                   <span class="mrp-value">₹${v.mrp}</span>
+                 </div>
+               `).join("") + 
+             `</div>`;
+         } else {
+             mrpContent = `<div class="mrp-single">₹${product.mrp}</div>`;
+         }
+
+         return `
+           <tr>
+             <td class="product-cell">
+               <div class="prod-name">${pName(product)}</div>
+               <div class="prod-meta">${product.brand}</div>
+             </td>
+             <td class="mrp-cell-main">
+               ${mrpContent}
+             </td>
+           </tr>
+         `;
+       }).join('');
+
+       groupedHtml += `
+         <div class="category-block">
+            <div class="category-title">${catDisplayName}</div>
+            <table class="catalog-table">
+               <thead>
+                  <tr>
+                     <th class="col-prod">Product Item</th>
+                     <th class="col-mrp">MRP Options / Columns</th>
+                   </tr>
+               </thead>
+               <tbody>
+                  ${productRows}
+               </tbody>
+            </table>
+         </div>
+       `;
+    });
 
     const html = `
       <!DOCTYPE html>
       <html lang="${lang}">
       <head>
         <meta charset="UTF-8">
-        <title>NEMA Chemicals — Product Catalog</title>
+        <title>NEMA Chemicals — Wholesale Catalog</title>
         <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            color: #1a2332;
-            padding: 40px;
+            font-family: 'Inter', sans-serif;
+            color: #1a1a1a;
+            padding: 20mm;
             background: white;
+            line-height: 1.4;
           }
           .print-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 3px solid #2563eb;
-            padding-bottom: 16px;
-            margin-bottom: 24px;
+            border-bottom: 2pt solid #000;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
           }
           .print-logo {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: 800;
-            color: #2563eb;
+            color: #000;
           }
           .print-logo-sub {
             font-size: 12px;
-            color: #5a6a7e;
-            font-weight: 500;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
           }
           .print-meta {
             text-align: right;
-            font-size: 12px;
-            color: #5a6a7e;
+            font-size: 11px;
           }
-          .print-category-title {
-            font-size: 16px;
-            font-weight: 700;
-            margin-bottom: 12px;
-            color: #2563eb;
+          .category-block {
+             margin-bottom: 30px;
+             page-break-inside: avoid;
           }
-          table {
+          .category-title {
+             font-size: 16px;
+             font-weight: 800;
+             background: #f0f0f0;
+             padding: 6px 12px;
+             margin-bottom: 10px;
+             text-transform: uppercase;
+             border-left: 5px solid #000;
+          }
+          .catalog-table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;
+          }
+          .catalog-table th {
+            font-size: 10px;
+            text-transform: uppercase;
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #000;
+            color: #666;
+          }
+          .col-prod { width: 50%; }
+          .col-mrp { width: 50%; }
+          .product-cell {
+            padding: 10px 8px;
+            border-bottom: 0.5pt solid #eee;
+            vertical-align: top;
+          }
+          .prod-name {
+            font-weight: 700;
             font-size: 13px;
           }
-          thead th {
-            background: #2563eb;
-            color: white;
-            padding: 10px 12px;
-            text-align: left;
+          .prod-meta {
+            font-size: 10px;
+            color: #666;
+          }
+          .mrp-cell-main {
+            padding: 8px;
+            border-bottom: 0.5pt solid #eee;
+            vertical-align: top;
+          }
+          .mrp-single {
+            font-size: 18px;
+            font-weight: 800;
+            text-align: right;
+          }
+          .mrp-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+          }
+          .mrp-item {
+            border: 0.5pt solid #ddd;
+            padding: 4px 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #fafafa;
+          }
+          .mrp-label {
+            font-size: 8px;
+            color: #666;
             font-weight: 600;
-            font-size: 12px;
           }
-          thead th:nth-child(3),
-          thead th:nth-child(4),
-          thead th:nth-child(5),
-          thead th:nth-child(6) {
-            text-align: center;
-          }
-          tbody tr:nth-child(even) {
-            background: #f7f9fc;
+          .mrp-value {
+            font-size: 14px;
+            font-weight: 800;
           }
           .print-footer {
-            margin-top: 32px;
-            padding-top: 16px;
-            border-top: 1px solid #e5e9f0;
-            font-size: 11px;
-            color: #8b96a8;
+            margin-top: 50px;
             text-align: center;
+            font-size: 10px;
+            color: #999;
           }
           @media print {
-            body { padding: 20px; }
+            body { padding: 0mm; }
             .no-print { display: none !important; }
+            @page { margin: 15mm; }
           }
         </style>
       </head>
       <body>
         <div class="print-header">
           <div>
-            <div class="print-logo">🧪 NEMA Chemicals</div>
-            <div class="print-logo-sub">Wholesale FMCG Product Catalog</div>
+            <div class="print-logo">NEMA Chemicals</div>
+            <div class="print-logo-sub">Wholesale FMCG Price List (MRP)</div>
           </div>
           <div class="print-meta">
             <div>Category: <strong>${categoryName}</strong></div>
-            <div>${filtered.length} products</div>
-            <div>Generated: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+            <div>Date: <strong>${new Date().toLocaleDateString('en-IN')}</strong></div>
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th style="text-align:center;">Category</th>
-              <th style="text-align:right;">Price</th>
-              <th style="text-align:right;">MRP</th>
-              <th style="text-align:center;">Discount</th>
-              <th style="text-align:center;">Stock</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${productRows}
-          </tbody>
-        </table>
+        ${groupedHtml}
 
         <div class="print-footer">
-          © 2026 NEMA Chemicals — Wholesale FMCG Distribution · This catalog is auto-generated and subject to change.
+          Prices shown are Maximum Retail Prices (MRP). For wholesale rates, please contact our sales office.
+        </div>
+          @media print {
+            body { padding: 15px; }
+            .no-print { display: none !important; }
+            .category-block { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <div>
+            <div class="print-logo">NEMA Chemicals</div>
+            <div class="print-logo-sub">FMCG Master Catalog</div>
+          </div>
+          <div class="print-meta">
+            <div style="font-size:14px; margin-bottom:4px;">Filter applied: <strong>${categoryName}</strong></div>
+            <div>Total Items: <strong>${filtered.length}</strong></div>
+            <div>Generated: <strong>${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>
+          </div>
         </div>
 
-        <div class="no-print" style="text-align:center; margin-top: 24px;">
-          <button onclick="window.print()" style="padding: 10px 32px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">
-            🖨️ Print / Save as PDF
+        ${groupedHtml}
+
+        <div class="print-footer">
+          © ${new Date().getFullYear()} NEMA Chemicals — Wholesale Distribution. All prices are MRP. Contact for wholesale discounts.
+        </div>
+
+        <div class="no-print" style="text-align:center; margin-top: 30px;">
+          <button onclick="window.print()" style="padding: 12px 32px; background: #1e3a8a; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.2);">
+            🖨️ Print / Save PDF
           </button>
         </div>
 
         <script>
-          // Auto-trigger print dialog
-          setTimeout(() => window.print(), 500);
+          setTimeout(() => window.print(), 800);
         </script>
       </body>
       </html>
@@ -606,6 +971,18 @@
     }, 250);
   });
 
+  // Category Search
+  let catSearchTimeout;
+  if (categorySearchEl) {
+    categorySearchEl.addEventListener("input", () => {
+      clearTimeout(catSearchTimeout);
+      catSearchTimeout = setTimeout(() => {
+        state.categorySearchQuery = categorySearchEl.value.trim();
+        renderCategories();
+      }, 200);
+    });
+  }
+
   // Sort
   sortSelectEl.addEventListener("change", () => {
     state.sortBy = sortSelectEl.value;
@@ -629,6 +1006,12 @@
     if (e.key === "Escape") {
       closeModal();
     }
+    
+    // Switch to admin panel
+    if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+      e.preventDefault();
+      window.location.href = "admin.html";
+    }
   });
 
   // Mobile menu
@@ -646,63 +1029,49 @@
     }
   });
 
+  // Search Brands
+  const storeBrandSearchEl = $("#storeBrandSearch");
+  if (storeBrandSearchEl) {
+    storeBrandSearchEl.addEventListener("input", (e) => {
+      renderStoreBrands(e.target.value);
+    });
+  }
+
+  // Toggle Brands Layout (Show All / Show Less)
+  let brandsShowingAll = false;
+  const toggleBrandsLayoutEl = $("#toggleBrandsLayout");
+  if (toggleBrandsLayoutEl) {
+    toggleBrandsLayoutEl.addEventListener("click", () => {
+      brandsShowingAll = !brandsShowingAll;
+      const carouselEl = $("#storeBrandsCarousel");
+      if (carouselEl) {
+        if (brandsShowingAll) {
+          carouselEl.style.flexWrap = "wrap";
+          carouselEl.style.overflowX = "visible";
+          carouselEl.style.paddingBottom = "0px";
+          toggleBrandsLayoutEl.setAttribute("data-i18n", "show_less_brands");
+          toggleBrandsLayoutEl.textContent = I18N.t("show_less_brands");
+        } else {
+          carouselEl.style.flexWrap = "nowrap";
+          carouselEl.style.overflowX = "auto";
+          carouselEl.style.paddingBottom = "10px";
+          toggleBrandsLayoutEl.setAttribute("data-i18n", "show_all_brands");
+          toggleBrandsLayoutEl.textContent = I18N.t("show_all_brands");
+        }
+      }
+    });
+  }
+
   // ===== Initialize =====
-  async function init() {
+  function init() {
     I18N.setLanguage("en");
     syncData();
-
-    // Fetch from native app database if available
-    if (window.electronAPI && window.electronAPI.getDbData) {
-      const dbProducts = await window.electronAPI.getDbData("products");
-      const dbCategories = await window.electronAPI.getDbData("categories");
-      if (dbProducts) window.PRODUCTS = dbProducts;
-      
-      if (dbCategories) {
-        // Merge strategy for categories (maintain hierarchical UI logic)
-        const parsedCat = dbCategories;
-        if (typeof window.CATEGORIES !== "undefined") {
-          const staticCategories = window.CATEGORIES.filter(c => c.id !== "all");
-          staticCategories.forEach(sc => {
-            if (!parsedCat.find(pc => pc.id === sc.id)) parsedCat.push(sc);
-          });
-          parsedCat.forEach(pc => {
-             const sc = staticCategories.find(s => s.id === pc.id);
-             if (sc) {
-                pc.nameKey = sc.nameKey;
-                pc.icon = sc.icon;
-                pc.isSub = sc.isSub;
-                pc.parent = sc.parent;
-             }
-          });
-        }
-        window.CATEGORIES = [{ id: "all", nameKey: "cat_all", icon: "📦" }, ...parsedCat];
-      }
-    } else {
-       // local storage fallback
-       const lsP = localStorage.getItem("nema_admin_products");
-       if(lsP) window.PRODUCTS = JSON.parse(lsP);
-       const lsC = localStorage.getItem("nema_admin_categories");
-       if(lsC) {
-          const parsedCat = JSON.parse(lsC);
-          const staticCategories = window.CATEGORIES.filter(c => c.id !== "all");
-          staticCategories.forEach(sc => {
-            if (!parsedCat.find(pc => pc.id === sc.id)) parsedCat.push(sc);
-          });
-          parsedCat.forEach(pc => {
-             const sc = staticCategories.find(s => s.id === pc.id);
-             if (sc) {
-                pc.nameKey = sc.nameKey;
-                pc.icon = sc.icon;
-                pc.isSub = sc.isSub;
-                pc.parent = sc.parent;
-             }
-          });
-          window.CATEGORIES = [{ id: "all", nameKey: "cat_all", icon: "📦" }, ...parsedCat];
-       }
-    }
-
     renderCategories();
+    renderStoreBrands();
     renderProducts();
+
+    // Load available images for auto-resolution
+    loadImagesCache();
   }
 
   init();

@@ -1,10 +1,15 @@
 // ===== NEMA Chemicals — Electron Main Process =====
-// Desktop app with auto-update, navigation between pages, and native window controls.
+// Desktop app with auto-update, navigation, live-sync, and native window controls.
 
 const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
+const { exec } = require("child_process");
+
+// ===== Source Files (for live-sync write-back) =====
+const PRODUCTS_JS_PATH = path.join(__dirname, "products.js");
+let fileWatcher = null;   // fs.watch handle
 
 // ===== Database Storage Path =====
 let DB_PATH = "";
@@ -126,7 +131,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    title: "NEMA Chemicals — Wholesale FMCG Catalog",
+    title: "NEMA Chemicals — FMCG Product Catalog",
     backgroundColor: "#0a0e1a",
     show: false, // Show after ready-to-show for smooth launch
     webPreferences: {
@@ -292,7 +297,7 @@ function createMenu() {
               title: "NEMA Chemicals",
               message: `NEMA Chemicals v${app.getVersion()}`,
               detail:
-                "Wholesale FMCG Product Catalog\n\nDesktop application for managing and browsing FMCG product inventory.\n\n© 2026 NEMA Chemicals",
+                "FMCG Product Catalog\n\nDesktop application for managing and browsing FMCG product inventory.\n\n© 2026 NEMA Chemicals",
             });
           },
         },
@@ -314,6 +319,54 @@ function createMenu() {
 
 // ===== IPC Handlers =====
 function setupIPC() {
+  // Save image to disk
+  ipcMain.handle("save-image", async (event, { source, filename }) => {
+    try {
+      const imagesDir = path.join(__dirname, "images");
+      if (!fs.existsSync(imagesDir)) {
+        fs.mkdirSync(imagesDir, { recursive: true });
+      }
+
+      const filePath = path.join(imagesDir, filename);
+      let buffer;
+
+      if (source.startsWith("data:")) {
+        // Data URL (base64)
+        const base64Data = source.split(",")[1];
+        buffer = Buffer.from(base64Data, "base64");
+      } else if (source.startsWith("http")) {
+        // Remote URL
+        const protocol = source.startsWith("https") ? require("https") : require("http");
+        buffer = await new Promise((resolve, reject) => {
+          const req = protocol.get(source, (res) => {
+            if (res.statusCode !== 200) {
+              reject(new Error(`Failed to fetch image: ${res.statusCode}`));
+              return;
+            }
+            const chunks = [];
+            res.on("data", (chunk) => chunks.push(chunk));
+            res.on("end", () => resolve(Buffer.concat(chunks)));
+          });
+          req.on("error", reject);
+          req.setTimeout(12000, () => {
+            req.destroy();
+            reject(new Error("Image download timed out (12s)"));
+          });
+        });
+      } else {
+        // Already a local path or invalid
+        return { success: true, path: source };
+      }
+
+      fs.writeFileSync(filePath, buffer);
+      console.log(`[ImageSave] Saved ${filename} to ${filePath}`);
+      return { success: true, path: `images/${filename}` };
+    } catch (err) {
+      console.error("[ImageSave] Error:", err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
   // Manual update check from renderer
   ipcMain.handle("check-for-updates", async () => {
     if (IS_DEV) {
@@ -337,10 +390,48 @@ function setupIPC() {
     return app.getVersion();
   });
 
+  // Read images directory dynamically (includes images/ and images/products/)
+  ipcMain.handle("read-images-directory", async () => {
+    try {
+      const imagesDir = path.join(__dirname, "images");
+      if (!fs.existsSync(imagesDir)) return [];
+      const imgRegex = /\.(png|jpe?g|gif|webp|svg)$/i;
+      
+      // Top-level images
+      const topFiles = fs.readdirSync(imagesDir)
+        .filter(f => imgRegex.test(f) && !fs.statSync(path.join(imagesDir, f)).isDirectory())
+        .map(f => ({ name: f, time: fs.statSync(path.join(imagesDir, f)).mtimeMs }));
+      
+      // images/products/ subfolder
+      const productsDir = path.join(imagesDir, "products");
+      let subFiles = [];
+      if (fs.existsSync(productsDir)) {
+        subFiles = fs.readdirSync(productsDir)
+          .filter(f => imgRegex.test(f))
+          .map(f => ({ name: "products/" + f, time: fs.statSync(path.join(productsDir, f)).mtimeMs }));
+      }
+      
+      // Combine and sort by modified time descending (newest first)
+      const allFiles = [...topFiles, ...subFiles]
+        .sort((a, b) => b.time - a.time)
+        .map(fileObj => fileObj.name);
+        
+      return allFiles;
+    } catch(err) {
+      return [];
+    }
+  });
+
   // Fetch real image from Google Images
   ipcMain.handle("fetch-image-online", async (event, query, source) => {
     return new Promise((resolve) => {
-      const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+      const win = new BrowserWindow({ 
+        show: false, 
+        webPreferences: { 
+          offscreen: true,
+          images: false // Don't load actual images to save bandwidth
+        } 
+      });
       
       let siteModifier = "";
       if (source === "amazon") siteModifier = "site:amazon.in ";
@@ -355,7 +446,6 @@ function setupIPC() {
           const imageUrl = await win.webContents.executeJavaScript(`
             (function() {
                let imgs = Array.from(document.querySelectorAll('img[src^="http"]'));
-               // Find first image that isn't a tiny logo/icon
                let target = imgs.find(img => img.width > 50 && img.height > 50 && img.src.indexOf('logo') === -1);
                return target ? target.src : null;
             })();
@@ -367,11 +457,10 @@ function setupIPC() {
           resolve(null);
         }
       });
-      // Fallback timeout
       setTimeout(() => {
         if (!win.isDestroyed()) win.close();
         resolve(null);
-      }, 8000);
+      }, 10000);
     });
   });
 
@@ -382,7 +471,77 @@ function setupIPC() {
     }
   });
 
-  // ===== Local App Database Handling =====
+  // ===================================================================
+  // LIVE SYNC — Write admin changes back to products.js source file
+  // ===================================================================
+  ipcMain.handle("save-products-to-source", (event, productsArray, categoriesArray) => {
+    try {
+      // Build the complete products.js file content
+      const productsJson = JSON.stringify(productsArray, null, 2)
+        .replace(/^/gm, "  ")  // indent each line by 2 spaces
+        .trim();
+
+      const categoriesJson = JSON.stringify(categoriesArray, null, 2)
+        .replace(/^/gm, "  ")
+        .trim();
+
+      const fileContent =
+`// ===== Product Data Module =====
+// AUTO-GENERATED by NEMA Chemicals Admin Panel — do not edit manually.
+// Last updated: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+
+const PRODUCTS = ${productsJson.replace(/^  /gm, "")};
+
+const CATEGORIES = [
+  { id: "all", nameKey: "cat_all", icon: "•" },
+  ...${categoriesJson.replace(/^  /gm, "")}
+    .filter(c => c.id !== "all")
+];
+`;
+
+      // Write atomically
+      const tmpPath = PRODUCTS_JS_PATH + ".tmp";
+      fs.writeFileSync(tmpPath, fileContent, "utf-8");
+      fs.renameSync(tmpPath, PRODUCTS_JS_PATH);
+
+      console.log("[LiveSync] products.js updated —", productsArray.length, "products,", categoriesArray.length, "categories");
+
+      return { success: true, count: productsArray.length };
+    } catch (err) {
+      console.error("[LiveSync] Failed to write products.js:", err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("deploy-website", async (event) => {
+    if (mainWindow) {
+      mainWindow.webContents.send("deploy-status", "deploying");
+    }
+    console.log("[Auto-Deploy] Starting Firebase deploy...");
+    const deployEnv = Object.assign({}, process.env, {
+      PATH: `/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ""}`
+    });
+    exec("/usr/local/bin/npx -y firebase-tools@latest deploy --only hosting", {
+      cwd: __dirname,
+      env: deployEnv,
+      timeout: 120000
+    }, (error, stdout, stderr) => {
+      if (error) {
+        console.error("[Auto-Deploy] Error:", error.message);
+        console.error("[Auto-Deploy] Stdout:", stdout);
+        console.error("[Auto-Deploy] Stderr:", stderr);
+        if (mainWindow) mainWindow.webContents.send("deploy-status", "error");
+        return;
+      }
+      console.log("[Auto-Deploy] Deploy complete. Output:", stdout);
+      if (mainWindow) mainWindow.webContents.send("deploy-status", "success");
+    });
+    return { success: true };
+  });
+
+  // ===================================================================
+  // LOCAL APP DATABASE Handling
+  // ===================================================================
   ipcMain.handle("get-db-data", (event, key) => {
     try {
       if (fs.existsSync(DB_PATH)) {
@@ -416,12 +575,48 @@ function setupIPC() {
   });
 }
 
+// ===================================================================
+// FILE WATCHER — Auto-reload all windows when source files change
+// ===================================================================
+function setupFileWatcher() {
+  const watchFiles = [
+    path.join(__dirname, "products.js"),
+    path.join(__dirname, "app.js"),
+    path.join(__dirname, "styles.css"),
+    path.join(__dirname, "index.html"),
+  ];
+
+  let reloadTimer = null;
+
+  watchFiles.forEach((filePath) => {
+    if (!fs.existsSync(filePath)) return;
+    fs.watch(filePath, (eventType) => {
+      if (eventType !== "change") return;
+      // Debounce rapid saves
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        console.log("[FileWatcher] Change detected, reloading catalog window...");
+        // Reload all windows EXCEPT the admin panel
+        BrowserWindow.getAllWindows().forEach((win) => {
+          const url = win.webContents.getURL();
+          if (!url.includes("admin.html")) {
+            win.webContents.reload();
+          }
+        });
+      }, 300);
+    });
+  });
+
+  console.log("[FileWatcher] Watching", watchFiles.length, "source files for changes");
+}
+
 // ===== App Lifecycle =====
 app.on("ready", () => {
   createWindow();
   createMenu();
   setupIPC();
   setupAutoUpdater();
+  setupFileWatcher();  // Auto-reload catalog when source files change
 });
 
 app.on("window-all-closed", () => {
