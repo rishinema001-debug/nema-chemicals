@@ -12,6 +12,18 @@
   const STORAGE_KEY_AUTH = "nema_admin_auth";
   const STORAGE_KEY_THEME = "nema_admin_theme";
 
+  // ===== Firebase Database Reference =====
+  let firebaseDb = null;
+  try {
+    if (typeof firebase !== 'undefined' && typeof FIREBASE_CONFIG !== 'undefined') {
+      const app = firebase.initializeApp(FIREBASE_CONFIG);
+      firebaseDb = firebase.database();
+      console.log('[Admin] Firebase connected successfully');
+    }
+  } catch (e) {
+    console.warn('[Admin] Firebase not available, using local storage only:', e.message);
+  }
+
   // ===== DOM Helpers =====
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -860,12 +872,28 @@
     let storedProducts = null;
     let storedCategories = null;
 
-    if (window.electronAPI && window.electronAPI.getDbData) {
+    // 1. Try Firebase first (cloud database)
+    if (firebaseDb) {
+      try {
+        const [prodSnap, catSnap] = await Promise.all([
+          firebaseDb.ref('products').once('value'),
+          firebaseDb.ref('categories').once('value')
+        ]);
+        if (prodSnap.exists()) storedProducts = prodSnap.val();
+        if (catSnap.exists()) storedCategories = catSnap.val();
+        if (storedProducts) console.log('[Admin] Loaded ' + storedProducts.length + ' products from Firebase');
+      } catch (e) {
+        console.warn('[Admin] Firebase read failed:', e.message);
+      }
+    }
+
+    // 2. Fallback: Electron store
+    if (!storedProducts && window.electronAPI && window.electronAPI.getDbData) {
       storedProducts = await window.electronAPI.getDbData("products");
       storedCategories = await window.electronAPI.getDbData("categories");
     }
     
-    // Fallback to localStorage if electron store is empty
+    // 3. Fallback: localStorage
     if (!storedProducts) {
       const lsProducts = localStorage.getItem(STORAGE_KEY_PRODUCTS);
       if (lsProducts) storedProducts = JSON.parse(lsProducts);
@@ -898,13 +926,11 @@
       // Merge logic: ensure newly added static CATEGORIES appear even if localstorage has old ones
       if (typeof CATEGORIES !== "undefined") {
         const staticCategories = CATEGORIES.filter(c => c.id !== "all");
-        // Add any new categories that are in static but not in local storage
         staticCategories.forEach(sc => {
           if (!parsedCat.find(pc => pc.id === sc.id)) {
             parsedCat.push(sc);
           }
         });
-        // Update names/icons from static source
         parsedCat.forEach(pc => {
            const sc = staticCategories.find(s => s.id === pc.id);
            if (sc) {
@@ -926,6 +952,12 @@
 
   function saveProducts() {
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
+    // Save to Firebase cloud database
+    if (firebaseDb) {
+      firebaseDb.ref('products').set(products)
+        .then(() => console.log('[Admin] Products saved to Firebase'))
+        .catch(e => console.warn('[Admin] Firebase save failed:', e.message));
+    }
     if (window.electronAPI && window.electronAPI.saveDbData) {
       window.electronAPI.saveDbData("products", products);
     }
@@ -937,6 +969,12 @@
 
   function saveCategories() {
     localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
+    // Save to Firebase cloud database
+    if (firebaseDb) {
+      firebaseDb.ref('categories').set(categories)
+        .then(() => console.log('[Admin] Categories saved to Firebase'))
+        .catch(e => console.warn('[Admin] Firebase save failed:', e.message));
+    }
     if (window.electronAPI && window.electronAPI.saveDbData) {
       window.electronAPI.saveDbData("categories", categories);
     }

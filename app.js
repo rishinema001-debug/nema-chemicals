@@ -9,10 +9,20 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  // ===== Firebase Database Reference =====
+  let firebaseDb = null;
+  try {
+    if (typeof firebase !== 'undefined' && typeof FIREBASE_CONFIG !== 'undefined') {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      firebaseDb = firebase.database();
+      console.log('[Store] Firebase connected');
+    }
+  } catch (e) {
+    console.warn('[Store] Firebase not available:', e.message);
+  }
+
   // ===== Data Source Sync =====
-  // Reads from localStorage (written by Admin Panel) and merges with
-  // static CATEGORIES/PRODUCTS from products.js so the storefront
-  // instantly reflects any admin changes.
+  // Priority: Firebase Cloud DB > localStorage > static products.js
   let APP_PRODUCTS = [];
   let APP_CATEGORIES = [];
   let APP_BRANDS = [];
@@ -22,7 +32,6 @@
     const rawProducts = localStorage.getItem("nema_admin_products");
     if (rawProducts) {
       try { APP_PRODUCTS = JSON.parse(rawProducts); } catch (_) { APP_PRODUCTS = []; }
-      // Auto-merge new products from products.js into localStorage
       if (typeof PRODUCTS !== "undefined" && Array.isArray(PRODUCTS)) {
         let added = false;
         PRODUCTS.forEach(p => {
@@ -47,14 +56,12 @@
     }
     if (!Array.isArray(stored)) stored = [];
 
-    // Merge static definitions so new categories always show up
     if (typeof CATEGORIES !== "undefined") {
       CATEGORIES.forEach(sc => {
         if (!stored.find(pc => pc.id === sc.id)) {
           stored.push(sc);
         }
       });
-      // Keep nameKey / hierarchy fresh from source
       stored.forEach(pc => {
         const sc = CATEGORIES.find(s => s.id === pc.id);
         if (sc) {
@@ -66,7 +73,6 @@
       });
     }
 
-    // Guarantee "all" entry exists at position 0
     if (!stored.find(c => c.id === "all")) {
       stored.unshift({ id: "all", nameKey: "cat_all", icon: "•" });
     }
@@ -93,6 +99,53 @@
       APP_BRANDS = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
     }
 
+  }
+
+  // ===== Firebase Real-Time Sync =====
+  // Listen for cloud changes and auto-refresh the storefront
+  function startFirebaseSync() {
+    if (!firebaseDb) return;
+
+    firebaseDb.ref('products').on('value', (snap) => {
+      if (snap.exists()) {
+        const cloudProducts = snap.val();
+        if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
+          APP_PRODUCTS = cloudProducts;
+          localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
+          // Rebuild brands from products
+          const uniqueBrands = [...new Set(APP_PRODUCTS.map(p => p.brand))].filter(b => b);
+          APP_BRANDS = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
+          renderCategories();
+          renderStoreBrands();
+          renderProducts();
+          console.log('[Store] Products updated from Firebase: ' + cloudProducts.length);
+        }
+      }
+    });
+
+    firebaseDb.ref('categories').on('value', (snap) => {
+      if (snap.exists()) {
+        const cloudCats = snap.val();
+        if (Array.isArray(cloudCats) && cloudCats.length > 0) {
+          // Ensure "all" entry
+          if (!cloudCats.find(c => c.id === "all")) {
+            cloudCats.unshift({ id: "all", nameKey: "cat_all", icon: "•" });
+          }
+          APP_CATEGORIES = cloudCats;
+          localStorage.setItem("nema_admin_categories", JSON.stringify(cloudCats));
+          // Register translations
+          if (typeof I18N !== "undefined" && I18N._addTranslation) {
+            APP_CATEGORIES.forEach(cat => {
+              if (cat.nameEn) I18N._addTranslation("en", cat.nameKey, cat.nameEn);
+              if (cat.nameHi) I18N._addTranslation("hi", cat.nameKey, cat.nameHi);
+            });
+          }
+          renderCategories();
+          renderProducts();
+          console.log('[Store] Categories updated from Firebase: ' + cloudCats.length);
+        }
+      }
+    });
   }
 
   // ===== Image Resolver (uses static IMAGE_INDEX from image-index.js) =====
@@ -1075,6 +1128,9 @@
 
     // Load available images for auto-resolution
     loadImagesCache();
+
+    // Start real-time sync with Firebase cloud database
+    startFirebaseSync();
   }
 
   init();
