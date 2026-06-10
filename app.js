@@ -105,9 +105,6 @@
         if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
           APP_PRODUCTS = cloudProducts;
           localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
-          // Rebuild brands from products
-          const uniqueBrands = [...new Set(APP_PRODUCTS.map(p => p.brand))].filter(b => b);
-          APP_BRANDS = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
           renderCategories();
           renderStoreBrands();
           renderProducts();
