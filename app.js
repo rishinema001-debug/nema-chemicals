@@ -28,16 +28,15 @@
   let APP_BRANDS = [];
 
   function syncData() {
+    // Minimal fallback initialization. Firebase real-time listeners are the 
+    // true source of truth and will overwrite these values immediately.
+
     // ---------- Products ----------
     const rawProducts = localStorage.getItem("nema_admin_products");
     if (rawProducts) {
-      try { APP_PRODUCTS = JSON.parse(rawProducts); } catch (_) { APP_PRODUCTS = []; }
-      if (typeof PRODUCTS !== "undefined" && Array.isArray(PRODUCTS)) {
-        let added = false;
-      }
-    } else {
-      APP_PRODUCTS = typeof PRODUCTS !== "undefined" ? PRODUCTS : [];
-      localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
+      try { APP_PRODUCTS = JSON.parse(rawProducts).filter(p => p); } catch (_) { APP_PRODUCTS = []; }
+    } else if (typeof PRODUCTS !== "undefined" && Array.isArray(PRODUCTS)) {
+      APP_PRODUCTS = PRODUCTS.filter(p => p);
     }
     if (!Array.isArray(APP_PRODUCTS)) APP_PRODUCTS = [];
 
@@ -45,7 +44,7 @@
     const rawCats = localStorage.getItem("nema_admin_categories");
     let stored = [];
     if (rawCats) {
-      try { stored = JSON.parse(rawCats); } catch (_) { stored = []; }
+      try { stored = JSON.parse(rawCats).filter(c => c); } catch (_) { stored = []; }
     }
     if (!Array.isArray(stored)) stored = [];
 
@@ -82,14 +81,9 @@
     // ---------- Brands ----------
     const rawBrands = localStorage.getItem("nema_admin_brands");
     if (rawBrands) {
-      try { APP_BRANDS = JSON.parse(rawBrands); } catch (_) { APP_BRANDS = []; }
+      try { APP_BRANDS = JSON.parse(rawBrands).filter(b => b); } catch (_) { APP_BRANDS = []; }
     } else {
       APP_BRANDS = [];
-    }
-    
-    if (!Array.isArray(APP_BRANDS) || APP_BRANDS.length === 0) {
-      const uniqueBrands = [...new Set(APP_PRODUCTS.map(p => p.brand))].filter(b => b);
-      APP_BRANDS = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
     }
 
   }
@@ -103,7 +97,7 @@
       if (snap.exists()) {
         const cloudProducts = snap.val();
         if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
-          APP_PRODUCTS = cloudProducts;
+          APP_PRODUCTS = cloudProducts.filter(p => p);
           localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
           renderCategories();
           renderStoreBrands();
@@ -121,7 +115,7 @@
           if (!cloudCats.find(c => c.id === "all")) {
             cloudCats.unshift({ id: "all", nameKey: "cat_all", icon: "•" });
           }
-          APP_CATEGORIES = cloudCats;
+          APP_CATEGORIES = cloudCats.filter(c => c);
           localStorage.setItem("nema_admin_categories", JSON.stringify(cloudCats));
           // Register translations
           if (typeof I18N !== "undefined" && I18N._addTranslation) {
@@ -141,7 +135,7 @@
       if (snap.exists()) {
         const cloudBrands = snap.val();
         if (Array.isArray(cloudBrands) && cloudBrands.length > 0) {
-          APP_BRANDS = cloudBrands;
+          APP_BRANDS = cloudBrands.filter(b => b);
           localStorage.setItem("nema_admin_brands", JSON.stringify(APP_BRANDS));
           renderStoreBrands();
           console.log('[Store] Brands updated from Firebase: ' + cloudBrands.length);
