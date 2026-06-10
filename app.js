@@ -34,13 +34,6 @@
       try { APP_PRODUCTS = JSON.parse(rawProducts); } catch (_) { APP_PRODUCTS = []; }
       if (typeof PRODUCTS !== "undefined" && Array.isArray(PRODUCTS)) {
         let added = false;
-        PRODUCTS.forEach(p => {
-          if (!APP_PRODUCTS.find(ap => ap.id === p.id)) {
-            APP_PRODUCTS.unshift(p);
-            added = true;
-          }
-        });
-        if (added) localStorage.setItem("nema_admin_products", JSON.stringify(APP_PRODUCTS));
       }
     } else {
       APP_PRODUCTS = typeof PRODUCTS !== "undefined" ? PRODUCTS : [];
@@ -143,6 +136,18 @@
           renderCategories();
           renderProducts();
           console.log('[Store] Categories updated from Firebase: ' + cloudCats.length);
+        }
+      }
+    });
+
+    firebaseDb.ref('brands').on('value', (snap) => {
+      if (snap.exists()) {
+        const cloudBrands = snap.val();
+        if (Array.isArray(cloudBrands) && cloudBrands.length > 0) {
+          APP_BRANDS = cloudBrands;
+          localStorage.setItem("nema_admin_brands", JSON.stringify(APP_BRANDS));
+          renderStoreBrands();
+          console.log('[Store] Brands updated from Firebase: ' + cloudBrands.length);
         }
       }
     });

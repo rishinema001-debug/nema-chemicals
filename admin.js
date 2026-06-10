@@ -905,16 +905,7 @@
 
     if (storedProducts) {
       products = storedProducts;
-      if (typeof PRODUCTS !== "undefined" && Array.isArray(PRODUCTS)) {
-        let added = false;
-        PRODUCTS.forEach(p => {
-          if (!products.find(ap => ap.id === p.id)) {
-            products.unshift(p);
-            added = true;
-          }
-        });
-        if (added) saveProducts();
-      }
+      // Removed auto-merge from PRODUCTS to fix deletion bug
     } else if (typeof PRODUCTS !== "undefined") {
       products = JSON.parse(JSON.stringify(PRODUCTS));
       saveProducts();
@@ -3694,6 +3685,12 @@
   
   function saveBrands() {
     localStorage.setItem(STORAGE_KEY_BRANDS, JSON.stringify(brands));
+    if (typeof firebaseDb !== 'undefined' && firebaseDb) {
+      const safeBrands = JSON.parse(JSON.stringify(brands));
+      firebaseDb.ref('brands').set(safeBrands)
+        .then(() => console.log('[Admin] Brands saved to Firebase'))
+        .catch(e => console.warn('[Admin] Firebase save failed:', e.message));
+    }
   }
 
   function loadBrands() {
@@ -3704,6 +3701,21 @@
       const uniqueBrands = [...new Set(products.map(p => p.brand))].filter(b => b);
       brands = uniqueBrands.map(name => ({ id: "brand_" + Date.now() + Math.random(), name, image: "" }));
       saveBrands();
+    }
+    
+    // Add Firebase listener for brands
+    if (typeof firebaseDb !== 'undefined' && firebaseDb) {
+      firebaseDb.ref('brands').once('value').then(snap => {
+        if (snap.exists()) {
+          const cloudBrands = snap.val();
+          if (Array.isArray(cloudBrands) && cloudBrands.length > 0) {
+            brands = cloudBrands;
+            localStorage.setItem(STORAGE_KEY_BRANDS, JSON.stringify(brands));
+            renderBrandsGrid($("#brandSearch").value);
+            renderDashboard();
+          }
+        }
+      });
     }
   }
 
