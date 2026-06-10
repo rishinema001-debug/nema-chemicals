@@ -6,7 +6,7 @@
   "use strict";
 
   // ===== Constants =====
-  const ADMIN_PASSWORD = "1234";
+  const ADMIN_PASS_HASH = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"; // SHA-256 hash of "1234"
   const STORAGE_KEY_PRODUCTS = "nema_admin_products";
   const STORAGE_KEY_CATEGORIES = "nema_admin_categories";
   const STORAGE_KEY_AUTH = "nema_admin_auth";
@@ -987,11 +987,19 @@
   }
 
   // ===== Authentication =====
-  function handleLogin(e) {
+  async function handleLogin(e) {
     e.preventDefault();
     const pw = $("#adminPassword");
     const err = $("#loginError");
-    if (pw.value === ADMIN_PASSWORD) {
+    
+    // Hash the entered password securely
+    const encoder = new TextEncoder();
+    const data = encoder.encode(pw.value);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (hashHex === ADMIN_PASS_HASH) {
       sessionStorage.setItem(STORAGE_KEY_AUTH, "true");
       showDashboard();
     } else {
