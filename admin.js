@@ -954,7 +954,8 @@
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
     // Save to Firebase cloud database
     if (firebaseDb) {
-      firebaseDb.ref('products').set(products)
+      const safeProducts = JSON.parse(JSON.stringify(products));
+      firebaseDb.ref('products').set(safeProducts)
         .then(() => console.log('[Admin] Products saved to Firebase'))
         .catch(e => console.warn('[Admin] Firebase save failed:', e.message));
     }
@@ -971,7 +972,8 @@
     localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(categories));
     // Save to Firebase cloud database
     if (firebaseDb) {
-      firebaseDb.ref('categories').set(categories)
+      const safeCategories = JSON.parse(JSON.stringify(categories));
+      firebaseDb.ref('categories').set(safeCategories)
         .then(() => console.log('[Admin] Categories saved to Firebase'))
         .catch(e => console.warn('[Admin] Firebase save failed:', e.message));
     }
@@ -2331,9 +2333,11 @@
       sku: $("#pSku").value.trim(),
       stock: parseInt($("#pStock").value),
       badge: $("#pBadge").value || null,
-      variants: currentVariants.length > 0 ? [...currentVariants] : undefined,
       desc: { en: $("#pDesc").value.trim(), hi: $("#pDescHi").value.trim() || $("#pDesc").value.trim() }
     };
+    if (currentVariants.length > 0) {
+      productData.variants = [...currentVariants];
+    }
 
     if (isEdit) {
       const index = products.findIndex(p => p.id === productData.id);
