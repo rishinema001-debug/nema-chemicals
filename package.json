@@ -71,7 +71,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "rishi2006",
+        "owner": "rishinema001-debug",
         "repo": "nema-chemicals",
         "releaseType": "release"
       }
